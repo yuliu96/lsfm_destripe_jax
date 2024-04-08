@@ -8,6 +8,12 @@ from setuptools import find_packages, setup
 with open("README.md") as readme_file:
     readme = readme_file.read()
 
+
+def _parse_requirements(requirements_txt_path):
+    with open(requirements_txt_path) as fp:
+        return fp.read().splitlines()
+
+
 setup_requirements = [
     "pytest-runner>=5.2",
 ]
@@ -37,7 +43,7 @@ dev_requirements = [
     "wheel>=0.34.2",
 ]
 
-requirements = []
+requirements = _parse_requirements("requirement_jax.txt")
 
 extra_requirements = {
     "setup": setup_requirements,
@@ -46,9 +52,6 @@ extra_requirements = {
     "all": [
         *requirements,
         *dev_requirements,
-    ],
-    "cuda11": [
-        "jax[cuda] @ https://storage.googleapis.com/jax-releases/jax_releases.html"
     ],
 }
 
