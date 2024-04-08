@@ -46,7 +46,10 @@ extra_requirements = {
     "all": [
         *requirements,
         *dev_requirements,
-    ]
+    ],
+    "cuda11": [
+        f'--upgrade "jax[cuda11_pip]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html'
+    ],
 }
 
 setup(
@@ -63,11 +66,10 @@ setup(
     ],
     description="DeStripe for LSFM in jax",
     entry_points={
-        "console_scripts": [
-            "my_example=lsfm_destripe_jax.bin.my_example:main"
-        ],
+        "console_scripts": ["my_example=lsfm_destripe_jax.bin.my_example:main"],
     },
     install_requires=requirements,
+    extras_require=extra_requirements,
     license="MIT license",
     long_description=readme,
     long_description_content_type="text/markdown",
@@ -79,7 +81,6 @@ setup(
     setup_requires=setup_requirements,
     test_suite="lsfm_destripe_jax/tests",
     tests_require=test_requirements,
-    extras_require=extra_requirements,
     url="https://github.com/yuliu96/lsfm_destripe_jax",
     # Do not edit this string manually, always use bumpversion
     # Details in CONTRIBUTING.rst
