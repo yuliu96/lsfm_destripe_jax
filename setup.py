@@ -71,6 +71,9 @@ setup(
     entry_points={
         "console_scripts": ["my_example=lsfm_destripe_jax.bin.my_example:main"],
     },
+    dependency_links=[
+        "https://storage.googleapis.com/jax-releases/jax_cuda_releases.html",
+    ],
     install_requires=requirements,
     extras_require=extra_requirements,
     license="MIT license",
