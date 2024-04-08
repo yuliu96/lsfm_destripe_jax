@@ -43,7 +43,9 @@ dev_requirements = [
     "wheel>=0.34.2",
 ]
 
-requirements = ["jax[cuda]"]
+requirements = [
+    "jax[cuda]@ https://storage.googleapis.com/jax-releases/jax_cuda_releases.html"
+]
 
 extra_requirements = {
     "setup": setup_requirements,
