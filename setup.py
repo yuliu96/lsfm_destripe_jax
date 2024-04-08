@@ -9,11 +9,6 @@ with open("README.md") as readme_file:
     readme = readme_file.read()
 
 
-def _parse_requirements(requirements_txt_path):
-    with open(requirements_txt_path) as fp:
-        return fp.read().splitlines()
-
-
 setup_requirements = [
     "pytest-runner>=5.2",
 ]
@@ -92,7 +87,7 @@ setup(
     setup_requires=setup_requirements,
     test_suite="lsfm_destripe_jax/tests",
     tests_require=test_requirements,
-    url="https://github.com/yuliu96/lsfm_destripe_jax",
+    url="https://github.com/peng-lab/lsfm_destripe",
     # Do not edit this string manually, always use bumpversion
     # Details in CONTRIBUTING.rst
     version="0.0.1",
