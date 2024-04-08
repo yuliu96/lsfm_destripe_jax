@@ -47,9 +47,7 @@ extra_requirements = {
         *requirements,
         *dev_requirements,
     ],
-    "cuda11": [
-        "jax[cuda] -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html"
-    ],
+    "cuda11": ["jax"],
 }
 
 setup(
