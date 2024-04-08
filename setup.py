@@ -48,7 +48,7 @@ extra_requirements = {
         *dev_requirements,
     ],
     "cuda11": [
-        f' --upgrade "jax[cuda11_pip]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html'
+        "jax[cuda] -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html"
     ],
 }
 
