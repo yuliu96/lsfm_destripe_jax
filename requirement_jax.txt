@@ -1,3 +1,2 @@
 # jax
---find-links https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
-jax[cuda]==0.4.2
+jax[cuda]
