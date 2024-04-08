@@ -47,7 +47,7 @@ extra_requirements = {
         *requirements,
         *dev_requirements,
     ],
-    "cuda11": ["jax"],
+    "cuda11": ["jax[cuda]"],
 }
 
 setup(
