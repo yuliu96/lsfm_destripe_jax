@@ -44,7 +44,13 @@ dev_requirements = [
 ]
 
 requirements = [
-    "jax[cuda]@ https://storage.googleapis.com/jax-releases/jax_cuda_releases.html"
+    "jax[cuda]",
+    "scikit-image",
+    "torch",
+    "torchvision",
+    "aicsimageio",
+    "tqdm",
+    "matplotlib",
 ]
 
 extra_requirements = {
@@ -71,7 +77,7 @@ setup(
     ],
     description="DeStripe for LSFM in jax",
     entry_points={
-        "console_scripts": ["my_example=lsfm_destripe_jax.bin.my_example:main"],
+        "console_scripts": ["destripe=lsfm_destripe.bin.run_destripe:main"],
     },
     install_requires=requirements,
     extras_require=extra_requirements,
