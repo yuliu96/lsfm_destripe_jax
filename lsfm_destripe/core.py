@@ -32,7 +32,12 @@ from lsfm_destripe.guided_filter_variant import (
     GuidedFilterHR_fast,
     GuidedFilter,
 )
-from lsfm_destripe.utils import prepare_aux, global_correction, fusion_perslice
+from lsfm_destripe.utils import (
+    prepare_aux,
+    global_correction,
+    fusion_perslice,
+    destripe_train_params,
+)
 
 
 class DeStripe:
