@@ -232,20 +232,43 @@ class DeStripe:
 
     @staticmethod
     def train_on_full_arr(
-        X: Union[np.ndarray, da.core.Array],
-        sample_params: Dict,
-        train_params: Dict,
-        mask: Union[np.ndarray, da.core.Array] = None,
-        dualtarget: Union[np.ndarray, da.core.Array] = None,
+        X: Union[np.ndarray, dask.array.core.Array],
+        is_vertical: bool,
+        angle_offset: List,
+        mask: Union[np.ndarray, dask.array.core.Array],
+        train_params: Dict = None,
         boundary: np.ndarray = None,
         display: bool = False,
         device: str = "cpu",
     ):
+        sample_params = {
+            "is_vertical": is_vertical,
+            "angle_offset": angle_offset,
+        }
+        if train_params is None:
+            train_params = destripe_train_params()
+        else:
+            train_params = destripe_train_params(**train_params)
         rng_seq = hk.PRNGSequence(random.PRNGKey(0))
-        z, _, m, n = X.shape
+        z, view_num, m, n = X.shape
         result = np.zeros((z, m, n), dtype=np.uint16)
         mean = np.zeros(z)
-        result_view1, result_view2 = None, None
+        sample_params["view_num"] = view_num
+        sample_params["md"], sample_params["nd"] = (
+            m // train_params["resample_ratio"] // 2 * 2 + 1,
+            n // train_params["resample_ratio"] // 2 * 2 + 1,
+        )
+        hier_mask_arr, hier_ind_arr, NI_arr = prepare_aux(
+            sample_params["md"],
+            sample_params["nd"],
+            sample_params["is_vertical"],
+            sample_params["angle_offset"],
+            train_params["wedge_degree"],
+            train_params["n_neighbors"],
+        )
+        train_params["NI"] = NI_arr
+        train_params["hier_mask"] = hier_mask_arr
+        train_params["hier_ind"] = hier_ind_arr
         if sample_params["view_num"] > 1:
             result_view1, result_view2 = np.zeros((z, m, n), dtype=np.uint16), np.zeros(
                 (z, m, n), dtype=np.uint16
@@ -253,27 +276,26 @@ class DeStripe:
             mean_view1, mean_view2 = np.zeros(z), np.zeros(z)
         if train_params["fast_GF"]:
             GuidedFilterHRModel = GuidedFilterHR_fast(
-                rx=train_params["KGFh"],
+                rx=train_params["GF_kernel_size_inference"],
                 ry=0,
-                angleList=train_params["angleOffset"],
+                angleList=sample_params["angle_offset"],
                 eps=1e-9,
-            ).to(device)
+                device=device,
+            )
         else:
             GuidedFilterHRModel = GuidedFilterHR(
-                rX=[train_params["KGFh"] * 2 + 1, train_params["KGFh"]],
+                rX=[
+                    train_params["GF_kernel_size_inference"] * 2 + 1,
+                    train_params["GF_kernel_size_inference"],
+                ],
                 rY=[0, 0],
-                m=(
-                    sample_params["m"]
-                    if sample_params["is_vertical"]
-                    else sample_params["n"]
-                ),
-                n=(
-                    sample_params["n"]
-                    if sample_params["is_vertical"]
-                    else sample_params["m"]
-                ),
-                Angle=train_params["angleOffset"],
-            ).to(device)
+                m=(m if sample_params["is_vertical"] else n),
+                n=(n if sample_params["is_vertical"] else m),
+                Angle=sample_params["angle_offset"],
+                device=device,
+            )
+        """.editorconfig"""
+        """.editorconfig"""
         hier_mask, hier_ind, NI = (
             jnp.asarray(train_params["hier_mask"]),
             jnp.asarray(train_params["hier_ind"]),
@@ -282,7 +304,7 @@ class DeStripe:
         network = transform_cmplx_haiku_model(
             model=DeStripeModel,
             inc=train_params["inc"],
-            KS=train_params["KGF"],
+            KS=train_params["GF_kernel_size_train"],
             m=(
                 sample_params["md"]
                 if sample_params["is_vertical"]
@@ -293,8 +315,8 @@ class DeStripe:
                 if sample_params["is_vertical"]
                 else sample_params["md"]
             ),
-            resampleRatio=train_params["resampleRatio"][0],
-            Angle=train_params["angleOffset"],
+            resampleRatio=train_params["resample_ratio"][0],
+            Angle=train_params["angle_offset"],
             NI=NI,
             hier_mask=hier_mask,
             hier_ind=hier_ind,
@@ -303,31 +325,24 @@ class DeStripe:
         )
         update_method = update_jax(network, Loss(train_params, sample_params), 0.01)
         for i in range(z):
-            O = np.log10(np.clip(np.asarray(X[i : i + 1]), 1, None))  # (1, v, m, n)
-            if sample_params["view_num"] > 1:
-                dualtarget_slice = np.log10(
-                    np.clip(np.asarray(dualtarget[i : i + 1]), 1, None)
-                )[None]
+            Ov = np.log10(np.clip(np.asarray(X[i : i + 1]), 1, None))  # (1, v, m, n)
             mask_slice = np.asarray(mask[i : i + 1])[None]
             boundary_slice = (
                 boundary[None, None, i : i + 1, :] if boundary is not None else None
             )
             if not sample_params["is_vertical"]:
-                O, mask_slice = O.transpose(0, 1, 3, 2), mask_slice.transpose(
+                Ov, mask_slice = Ov.transpose(0, 1, 3, 2), mask_slice.transpose(
                     0, 1, 3, 2
                 )
-                if sample_params["view_num"] > 1:
-                    dualtarget_slice = dualtarget_slice.transpose(0, 1, 3, 2)
-            Y, resultslice = DeStripe.train_on_one_slice(
+            Y, resultslice, dualtarget_numpy = DeStripe.train_on_one_slice(
                 network,
                 GuidedFilterHRModel,
                 update_method,
                 rng_seq,
                 sample_params,
                 train_params,
-                O,
+                Ov,
                 mask_slice,
-                dualtarget_slice if sample_params["view_num"] > 1 else None,
                 boundary_slice,
                 i + 1,
                 z,
@@ -337,17 +352,18 @@ class DeStripe:
                 Y = Y.T
                 if sample_params["view_num"] > 1:
                     resultslice = resultslice.transpose(0, 2, 1)
+                    dualtarget_numpy = dualtarget_numpy.T
             if display:
                 plt.figure(dpi=300)
                 ax = plt.subplot(1, 2, 2)
-                plt.imshow(Y, vmin=10 ** O.min(), vmax=10 ** O.max(), cmap="gray")
+                plt.imshow(Y, vmin=10 ** Ov.min(), vmax=10 ** Ov.max(), cmap="gray")
                 ax.set_title("output", fontsize=8, pad=1)
                 plt.axis("off")
                 ax = plt.subplot(1, 2, 1)
                 plt.imshow(
-                    dualtarget[i] if sample_params["view_num"] > 1 else X[i, 0],
-                    vmin=10 ** O.min(),
-                    vmax=10 ** O.max(),
+                    dualtarget_numpy if sample_params["view_num"] > 1 else X[i, 0],
+                    vmin=10 ** Ov.min(),
+                    vmax=10 ** Ov.max(),
                     cmap="gray",
                 )
                 ax.set_title("input", fontsize=8, pad=1)
@@ -364,21 +380,26 @@ class DeStripe:
                 )
                 mean_view1[i] = np.mean(result_view1[i] + 0.1)
                 mean_view2[i] = np.mean(result_view2[i] + 0.1)
-        if sample_params["require_global_correction"] and (z != 1):
+        if train_params["require_global_correction"] and (z != 1):
             print("global correcting...")
             result = global_correction(mean, result)
             if sample_params["view_num"] > 1:
                 result_view1, result_view2 = global_correction(
                     mean_view1, result_view1
                 ), global_correction(mean_view2, result_view2)
-        return result, result_view1, result_view2
+        print("Done")
+        if sample_params["view_num"] == 2:
+            return result, result_view1, result_view2
+        else:
+            return result
 
     def train(
         self,
-        X1: Union[str, np.ndarray, da.core.Array],
-        X2: Union[str, np.ndarray, da.core.Array] = None,
-        mask: Union[str, np.ndarray, da.core.Array] = None,
-        dualX: Union[str, np.ndarray, da.core.Array] = None,
+        X1: Union[str, np.ndarray, dask.array.core.Array],
+        is_vertical: bool,
+        angle_offset: List,
+        X2: Union[str, np.ndarray, dask.array.core.Array] = None,
+        mask: Union[str, np.ndarray, dask.array.core.Array] = None,
         boundary: Union[str, np.ndarray] = None,
         display: bool = False,
     ):
@@ -393,14 +414,8 @@ class DeStripe:
             if X2 is not None
             else da.stack([X1_data], 1)
         )
-        self.sample_params["view_num"] = X.shape[1]
+        view_num = X.shape[1]
         z, _, m, n = X.shape
-        md, nd = (
-            m // self.train_params["resampleRatio"][0] // 2 * 2 + 1,
-            n // self.train_params["resampleRatio"][1] // 2 * 2 + 1,
-        )
-        self.sample_params["m"], self.sample_params["n"] = m, n
-        self.sample_params["md"], self.sample_params["nd"] = md, nd
         # read in mask
         if mask is None:
             mask_data = np.zeros((z, m, n), dtype=bool)
@@ -411,46 +426,24 @@ class DeStripe:
                 "mask should be of same shape as input volume(s)."
             )
         # read in dual-result, if applicable
-        dualtarget = None
-        if self.sample_params["view_num"] > 1:
-            assert not isinstance(dualX, type(None)), print(
-                "dual-view fusion result is missing."
-            )
+        if view_num > 1:
             assert not isinstance(boundary, type(None)), print(
                 "dual-view fusion boundary is missing."
             )
             if isinstance(boundary, str):
                 boundary = np.load(boundary)
-            dualtarget_handle = AICSImage(dualX)
-            dualtarget = dualtarget_handle.get_image_dask_data("ZYX", T=0, C=0)
-            assert (
-                boundary.shape == (z, n)
-                if self.sample_params["is_vertical"]
-                else (z, m)
-            ), print("boundary index should be of shape [z_slices, n columns].")
-            assert dualtarget.shape == (z, m, n), print(
-                "fusion result should be of same shape as inputs."
+            assert boundary.shape == (z, n) if is_vertical else (z, m), print(
+                "boundary index should be of shape [z_slices, n columns]."
             )
         # training
-        hier_mask_arr, hier_ind_arr, NI_arr = prepare_aux(
-            self.sample_params["md"],
-            self.sample_params["nd"],
-            self.sample_params["is_vertical"],
-            self.train_params["angleOffset"],
-            self.train_params["deg"],
-            self.train_params["Nneighbors"],
-        )
-        self.train_params["NI"] = NI_arr
-        self.train_params["hier_mask"] = hier_mask_arr
-        self.train_params["hier_ind"] = hier_ind_arr
-        result, result_view1, result_view2 = self.train_on_full_arr(
+        out = self.train_on_full_arr(
             X,
-            self.sample_params,
-            self.train_params,
+            is_vertical,
+            angle_offset,
             mask_data,
-            dualtarget,
+            self.train_params,
             boundary,
             display=display,
             device=self.device,
         )
-        return result, result_view1, result_view2
+        return out
