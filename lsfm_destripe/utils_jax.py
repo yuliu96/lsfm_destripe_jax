@@ -39,7 +39,7 @@ def transform_cmplx_haiku_model(model, **model_kwargs):
     return network
 
 
-def initialize_cmplx_haiku_model(network, dummy_input, key):
+def initialize_cmplx_haiku_model(network, key, dummy_input):
     net_params, net_state = network.init(key, **dummy_input)
     return net_params, net_state
 
