@@ -92,7 +92,6 @@ class DeStripe:
     def train_on_one_slice(
         network,
         GuidedFilterHRModel,
-        update_method,
         sample_params: Dict,
         train_params: Dict,
         X: np.ndarray,
@@ -155,6 +154,7 @@ class DeStripe:
             .transpose(1, 0)[: md * nd // 2, :]
         )
         # initialize
+        update_method = update_jax(network, Loss(train_params, sample_params), 0.01)
         _net_params = initialize_cmplx_haiku_model(
             network,
             rng_seq,
@@ -346,7 +346,6 @@ class DeStripe:
             GFr=train_params["GF_kernel_size_train"],
             viewnum=sample_params["view_num"],
         )
-        update_method = update_jax(network, Loss(train_params, sample_params), 0.01)
         for i in range(z):
             Ov = np.log10(np.clip(np.asarray(X[i : i + 1]), 1, None))  # (1, v, m, n)
             mask_slice = np.asarray(mask[i : i + 1])[None]
@@ -360,7 +359,6 @@ class DeStripe:
             Y, resultslice, dualtarget_numpy = DeStripe.train_on_one_slice(
                 network,
                 GuidedFilterHRModel,
-                update_method,
                 sample_params,
                 train_params,
                 Ov,
