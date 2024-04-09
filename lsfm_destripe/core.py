@@ -19,7 +19,7 @@ import jax
 import jax.numpy as jnp
 from collections.abc import Iterator
 from haiku._src.typing import PRNGKey
-
+from jax import value_and_grad
 from lsfm_destripe.utils_jax import (
     transform_cmplx_haiku_model,
     initialize_cmplx_haiku_model,
