@@ -35,13 +35,13 @@ def transform_cmplx_haiku_model(model, **model_kwargs):
         net = model(**model_kwargs)
         return net(**x)
 
-    network = hk.without_apply_rng(hk.transform_with_state(forward_pass))
+    network = hk.without_apply_rng(hk.transform(forward_pass))
     return network
 
 
 def initialize_cmplx_haiku_model(network, key, dummy_input):
-    net_params, net_state = network.init(key, **dummy_input)
-    return net_params, net_state
+    net_params = network.init(key, **dummy_input)
+    return net_params
 
 
 class update_jax:
@@ -62,17 +62,15 @@ class update_jax:
         y,
         smoothedTarget,
         map,
-        net_state,
     ):
-        (l, (net_state, A, B, C)), grads = value_and_grad(self.loss, has_aux=True)(
+        (l, (A, B, C)), grads = value_and_grad(self.loss, has_aux=True)(
             params,
             self._network,
             {"X": x, "Xf": xf, "boundary": boundary, "target": y},
             y,
             smoothedTarget,
             map,
-            net_state,
         )
         grads = jax.tree_map(jnp.conjugate, grads)
         opt_state = self.opt_update(step, grads, opt_state)
-        return self.get_params(opt_state), opt_state, net_state, A, B, C
+        return self.get_params(opt_state), opt_state, A, B, C

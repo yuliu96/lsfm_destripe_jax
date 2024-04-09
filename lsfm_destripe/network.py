@@ -600,11 +600,8 @@ class Loss:
         targets,
         smoothedTarget,
         map,
-        net_state=None,
     ):
-        (outputGNNraw, outputGNN, outputLR), net_state = network.apply(
-            params, net_state, **inputs
-        )
+        outputGNNraw, outputGNN, outputLR = network.apply(params, **inputs)
         mse = jnp.sum(
             jnp.abs(smoothedTarget - self.GuidedFilterLoss(outputGNNraw, outputGNNraw))
         ) + jnp.sum(
@@ -621,7 +618,6 @@ class Loss:
             outputGNN, targets, self.DGaussxx, self.DGaussyy, self.DGaussxy
         )
         return 1 * mse + self.lambda_tv * tv + self.lambda_hessian * hessian, [
-            net_state,
             outputGNNraw,
             outputGNN,
             outputLR,

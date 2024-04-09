@@ -155,7 +155,7 @@ class DeStripe:
             .transpose(1, 0)[: md * nd // 2, :]
         )
         # initialize
-        _net_params, _net_state = initialize_cmplx_haiku_model(
+        _net_params = initialize_cmplx_haiku_model(
             network,
             rng_seq,
             {
@@ -175,7 +175,7 @@ class DeStripe:
             leave=False,
             desc="for {} ({} slices in total): ".format(s_, z),
         ):
-            _net_params, _opt_state, _net_state, Y_raw, Y_GNN, Y_LR = update_method(
+            _net_params, _opt_state, Y_raw, Y_GNN, Y_LR = update_method(
                 epoch,
                 _net_params,
                 _opt_state,
@@ -185,7 +185,6 @@ class DeStripe:
                 Xd if sample_params["view_num"] == 1 else dualtargetd,
                 smoothedTarget,
                 mask,
-                _net_state,
             )
         with torch.no_grad():
             m, n = X.shape[-2:]
