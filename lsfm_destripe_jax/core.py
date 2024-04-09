@@ -180,7 +180,6 @@ class DeStripe:
                 Xd if sample_params["view_num"] == 1 else dualtargetd,
                 smoothedTarget,
                 mask,
-                next(rng_seq),
                 _net_state,
             )
         with torch.no_grad():

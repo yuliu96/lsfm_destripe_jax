@@ -35,7 +35,7 @@ def transform_cmplx_haiku_model(model, **model_kwargs):
         net = model(**model_kwargs)
         return net(**x)
 
-    network = hk.transform_with_state(forward_pass)
+    network = hk.without_apply_rng(hk.transform(forward_pass))
     return network
 
 
@@ -62,7 +62,6 @@ class update_jax:
         y,
         smoothedTarget,
         map,
-        rng_key=None,
         net_state=None,
     ):
         (l, (net_state, A, B, C)), grads = value_and_grad(self.loss, has_aux=True)(
@@ -72,7 +71,6 @@ class update_jax:
             y,
             smoothedTarget,
             map,
-            rng_key,
             net_state,
         )
         grads = jax.tree_map(jnp.conjugate, grads)
