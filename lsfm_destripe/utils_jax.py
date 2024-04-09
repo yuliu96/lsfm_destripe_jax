@@ -63,7 +63,6 @@ class update_jax:
         smoothedTarget,
         map,
     ):
-        print(step)
         (l, (A, B, C)), grads = value_and_grad(self.loss, has_aux=True)(
             params,
             self._network,

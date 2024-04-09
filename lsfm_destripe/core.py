@@ -21,7 +21,6 @@ from collections.abc import Iterator
 from haiku._src.typing import PRNGKey
 
 from lsfm_destripe.utils_jax import (
-    cADAM,
     transform_cmplx_haiku_model,
     initialize_cmplx_haiku_model,
     update_jax,
@@ -165,8 +164,7 @@ class DeStripe:
                 "boundary": boundary,
             },
         )
-        opt_init, _, _ = cADAM(0.01)
-        _opt_state = opt_init(_net_params)
+        _opt_state = update.method.opt_init(_net_params)
         smoothedTarget = GuidedFilterLoss(
             r=train_params["GF_kernel_size_train"], eps=train_params["loss_eps"]
         )(Xd, Xd)
