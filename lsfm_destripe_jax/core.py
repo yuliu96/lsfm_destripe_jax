@@ -20,19 +20,19 @@ import jax.numpy as jnp
 from collections.abc import Iterator
 from haiku._src.typing import PRNGKey
 
-from destripe_jax.utils_jax import (
+from lsfm_destripe.utils_jax import (
     cADAM,
     transform_cmplx_haiku_model,
     initialize_cmplx_haiku_model,
     update_jax,
 )
-from destripe_jax.network import DeStripeModel, Loss, GuidedFilterLoss
-from destripe_jax.guided_filter_variant import (
+from lsfm_destripe.network import DeStripeModel, Loss, GuidedFilterLoss
+from lsfm_destripe.guided_filter_variant import (
     GuidedFilterHR,
     GuidedFilterHR_fast,
     GuidedFilter,
 )
-from destripe_jax.utils import prepare_aux, global_correction, fusion_perslice
+from lsfm_destripe.utils import prepare_aux, global_correction, fusion_perslice
 
 
 class DeStripe:

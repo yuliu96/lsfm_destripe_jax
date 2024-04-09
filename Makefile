@@ -49,9 +49,9 @@ build: ## run tox / run tests and lint
 	tox
 
 gen-docs: ## generate Sphinx HTML documentation, including API docs
-	rm -f docs/lsfm_destripe_jax*.rst
+	rm -f docs/lsfm_destripe*.rst
 	rm -f docs/modules.rst
-	sphinx-apidoc -o docs/ lsfm_destripe_jax **/tests/
+	sphinx-apidoc -o docs/ lsfm_destripe **/tests/
 	$(MAKE) -C docs html
 
 docs: ## generate Sphinx HTML documentation, including API docs, and serve to browser

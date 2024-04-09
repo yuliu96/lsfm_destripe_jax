@@ -5,20 +5,20 @@ helps, and credit will always be given.
 
 ## Get Started!
 
-Ready to contribute? Here's how to set up `lsfm_destripe_jax` for local development.
+Ready to contribute? Here's how to set up `lsfm_destripe` for local development.
 
-1. Fork the `lsfm_destripe_jax` repo on GitHub.
+1. Fork the `lsfm_destripe` repo on GitHub.
 
 2. Clone your fork locally:
 
     ```bash
-    git clone git@github.com:{your_name_here}/lsfm_destripe_jax.git
+    git clone git@github.com:{your_name_here}/lsfm_destripe.git
     ```
 
 3. Install the project in editable mode. (It is also recommended to work in a virtualenv or anaconda environment):
 
     ```bash
-    cd lsfm_destripe_jax/
+    cd lsfm_destripe/
     pip install -e .[dev]
     ```
 
