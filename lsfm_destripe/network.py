@@ -446,7 +446,7 @@ class Loss:
         self.angleOffset = train_params["angle_offset"]
         self.sampling = train_params["sampling_in_MSEloss"]
         self.f = train_params["isotropic_hessian"]
-        if train_params["HKs"] > 0.5:
+        if train_params["hessian_kernel_sigma"] > 0.5:
             self.DGaussxx, self.DGaussyy, self.DGaussxy = self.generateHessianKernel(
                 train_params["hessian_kernel_sigma"]
             )
