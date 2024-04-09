@@ -35,7 +35,7 @@ def transform_cmplx_haiku_model(model, **model_kwargs):
         net = model(**model_kwargs)
         return net(**x)
 
-    network = hk.without_apply_rng(hk.transform(forward_pass))
+    network = hk.without_apply_rng(hk.transform_with_state(forward_pass))
     return network
 
 

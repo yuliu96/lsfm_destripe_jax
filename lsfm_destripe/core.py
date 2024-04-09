@@ -102,7 +102,7 @@ class DeStripe:
         z: int = 1,
         device: str = "cpu",
     ):
-        rng_seq = hk.PRNGSequence(random.PRNGKey(0))
+        rng_seq = jax.random.PRNGKey(0)
         md = (
             sample_params["md"] if sample_params["is_vertical"] else sample_params["nd"]
         )
@@ -157,13 +157,13 @@ class DeStripe:
         # initialize
         _net_params, _net_state = initialize_cmplx_haiku_model(
             network,
+            rng_seq,
             {
                 "X": Xd,
                 "Xf": Xf,
                 "target": Xd if sample_params["view_num"] == 1 else dualtargetd,
                 "boundary": boundary,
             },
-            rng_seq,
         )
         opt_init, _, _ = cADAM(0.01)
         _opt_state = opt_init(_net_params)
