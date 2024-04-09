@@ -339,7 +339,7 @@ class DeStripe:
                 if sample_params["is_vertical"]
                 else sample_params["md"]
             ),
-            resampleRatio=train_params["resample_ratio"][0],
+            resampleRatio=train_params["resample_ratio"],
             Angle=train_params["angle_offset"],
             NI=NI,
             hier_mask=hier_mask,
