@@ -164,7 +164,7 @@ class DeStripe:
                 "boundary": boundary,
             },
         )
-        _opt_state = update.method.opt_init(_net_params)
+        _opt_state = update_method.opt_init(_net_params)
         smoothedTarget = GuidedFilterLoss(
             r=train_params["GF_kernel_size_train"], eps=train_params["loss_eps"]
         )(Xd, Xd)
