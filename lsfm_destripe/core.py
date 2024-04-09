@@ -254,10 +254,10 @@ class DeStripe:
 
     @staticmethod
     def train_on_full_arr(
-        X: Union[np.ndarray, dask.array.core.Array],
+        X: Union[np.ndarray, da.core.Array],
         is_vertical: bool,
         angle_offset: List,
-        mask: Union[np.ndarray, dask.array.core.Array],
+        mask: Union[np.ndarray, da.core.Array],
         train_params: Dict = None,
         boundary: np.ndarray = None,
         display: bool = False,
@@ -413,11 +413,11 @@ class DeStripe:
 
     def train(
         self,
-        X1: Union[str, np.ndarray, dask.array.core.Array],
+        X1: Union[str, np.ndarray, da.core.Array],
         is_vertical: bool,
         angle_offset: List,
-        X2: Union[str, np.ndarray, dask.array.core.Array] = None,
-        mask: Union[str, np.ndarray, dask.array.core.Array] = None,
+        X2: Union[str, np.ndarray, da.core.Array] = None,
+        mask: Union[str, np.ndarray, da.core.Array] = None,
         boundary: Union[str, np.ndarray] = None,
         display: bool = False,
     ):
