@@ -164,7 +164,7 @@ class DeStripe:
                 "boundary": boundary,
             },
         )
-        opt_state = update_method.opt_init(_net_params)
+        opt_state = update_method.opt_init(net_params)
         smoothedTarget = GuidedFilterLoss(
             r=train_params["GF_kernel_size_train"], eps=train_params["loss_eps"]
         )(Xd, Xd)
@@ -173,6 +173,21 @@ class DeStripe:
             leave=False,
             desc="for {} ({} slices in total): ".format(s_, z),
         ):
+            (l, (A, B, C)), grads = value_and_grad(
+                Loss(train_params, sample_params), has_aux=True
+            )(
+                net_params,
+                network,
+                {
+                    "X": Xd,
+                    "Xf": Xf,
+                    "boundary": boundary,
+                    "target": Xd if sample_params["view_num"] == 1 else dualtargetd,
+                },
+                Xd if sample_params["view_num"] == 1 else dualtargetd,
+                smoothedTarget,
+                map,
+            )
             net_params, opt_state, Y_raw, Y_GNN, Y_LR = update_method(
                 epoch,
                 net_params,
