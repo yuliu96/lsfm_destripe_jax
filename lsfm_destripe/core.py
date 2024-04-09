@@ -344,7 +344,7 @@ class DeStripe:
             NI=NI,
             hier_mask=hier_mask,
             hier_ind=hier_ind,
-            GFr=train_params["GFr"],
+            GFr=train_params["GF_kernel_size_train"],
             viewnum=sample_params["view_num"],
         )
         update_method = update_jax(network, Loss(train_params, sample_params), 0.01)
