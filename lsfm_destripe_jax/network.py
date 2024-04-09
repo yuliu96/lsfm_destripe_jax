@@ -19,10 +19,15 @@ class Cmplx_Xavier_Init(hk.initializers.Initializer):
     def __call__(self, shape, dtype):
         sigma = 1 / np.sqrt(self.n_in + self.n_out)
         magnitudes = jnp.array(
-            np.random.rayleigh(scale=sigma, size=shape), dtype="float32"
+            np.random.rayleigh(scale=sigma, size=shape),
+            dtype="float32",
         )
         phases = jax.random.uniform(
-            hk.next_rng_key(), shape, dtype="float32", minval=-np.pi, maxval=np.pi
+            hk.next_rng_key(),
+            shape,
+            dtype="float32",
+            minval=-np.pi,
+            maxval=np.pi,
         )
         return magnitudes * jnp.exp(1.0j * phases)
 
@@ -224,15 +229,15 @@ class identical_func:
 class DeStripeModel(hk.Module):
     def __init__(
         self,
-        inc,
+        Angle,
+        hier_mask,
+        hier_ind,
+        NI,
         m,
         n,
         resampleRatio,
         KS,
-        Angle,
-        NI,
-        hier_mask,
-        hier_ind,
+        inc=16,
         GFr=49,
         viewnum=1,
         device="gpu",
@@ -306,7 +311,6 @@ class DeStripeModel(hk.Module):
                 hk.Linear(viewnum),
             ]
         )
-        # self.basep = hk.Sequential([CLinear(inc), complexReLUJIT, CLinear(inc), complexReLUJIT, CLinear(viewnum)])
         self.merge = hk.Sequential(
             [
                 CLinear(inc),
@@ -374,7 +378,6 @@ class DeStripeModel(hk.Module):
             init=Cmplx_Xavier_Init(self.NI.shape[0], self.NI.shape[1]),
         )
         Xfcx = jnp.sum(jnp.einsum("knc,kn->knc", Xf[self.NI, :], w), 0)
-        # / jnp.clip(jnp.abs(w).sum(0, keepdims = True), 1e-8, None)
         Xf_tvx = jnp.concatenate((Xfcx, Xf[self.hier_mask, :]), 0)[
             self.hier_ind, :
         ].reshape(len(self.Angle), -1, self.inc)
@@ -395,7 +398,6 @@ class DeStripeModel(hk.Module):
         X_fourier = self.merge(jnp.concatenate(X_fourier, -1))
         outputGNNraw = self.fourierResult(X_fourier, aver)
         outputGNN = self.fuse(outputGNNraw, boundary)
-        # outputGNN = jnp.clip(outputGNN - target, 0, None) + target
         outputLR = self.GuidedFilter(target, outputGNN)
         return outputGNNraw, outputGNN, outputLR
 
@@ -437,27 +439,28 @@ class GuidedFilterLoss:
 
 
 class Loss:
-    def __init__(self, train_params, shape_params):
+    def __init__(self, train_params, shape_params, device="gpu"):
         super().__init__()
         self.lambda_tv = train_params["lambda_tv"]
         self.lambda_hessian = train_params["lambda_hessian"]
-        self.angleOffset = train_params["angleOffset"]
-        self.sampling = train_params["sampling"]
-        self.f = train_params["f"]
+        self.angleOffset = train_params["angle_offset"]
+        self.sampling = train_params["sampling_in_MSEloss"]
+        self.f = train_params["isotropic_hessian"]
         if train_params["HKs"] > 0.5:
             self.DGaussxx, self.DGaussyy, self.DGaussxy = self.generateHessianKernel(
-                train_params["HKs"]
+                train_params["hessian_kernel_sigma"]
             )
         else:
             self.DGaussxx, self.DGaussyy, self.DGaussxy = self.generateHessianKernel2(
-                train_params["HKs"], shape_params
+                train_params["hessian_kernel_sigma"], shape_params
             )
         self.Dy, self.Dx = (
             jnp.array([[1], [-1]], dtype=jnp.float32)[None, None],
             jnp.array([[1, -1]], dtype=jnp.float32)[None, None],
         )
         self.GuidedFilterLoss = GuidedFilterLoss(
-            r=train_params["KGF"], eps=train_params["losseps"]
+            r=train_params["GF_kernel_size_train"],
+            eps=train_params["loss_eps"],
         )
 
     def generateHessianKernel2(self, Sigma, shape_params):
