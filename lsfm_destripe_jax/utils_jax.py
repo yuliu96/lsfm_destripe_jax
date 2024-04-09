@@ -62,7 +62,7 @@ class update_jax:
         y,
         smoothedTarget,
         map,
-        net_state=None,
+        net_state,
     ):
         (l, (net_state, A, B, C)), grads = value_and_grad(self.loss, has_aux=True)(
             params,
