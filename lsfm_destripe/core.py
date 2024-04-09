@@ -154,7 +154,7 @@ class DeStripe:
             .transpose(1, 0)[: md * nd // 2, :]
         )
         # initialize
-        _net_params = initialize_cmplx_haiku_model(
+        net_params = initialize_cmplx_haiku_model(
             network,
             rng_seq,
             {
@@ -164,7 +164,7 @@ class DeStripe:
                 "boundary": boundary,
             },
         )
-        _opt_state = update_method.opt_init(_net_params)
+        opt_state = update_method.opt_init(_net_params)
         smoothedTarget = GuidedFilterLoss(
             r=train_params["GF_kernel_size_train"], eps=train_params["loss_eps"]
         )(Xd, Xd)
@@ -173,10 +173,10 @@ class DeStripe:
             leave=False,
             desc="for {} ({} slices in total): ".format(s_, z),
         ):
-            _net_params, _opt_state, Y_raw, Y_GNN, Y_LR = update_method(
+            net_params, opt_state, Y_raw, Y_GNN, Y_LR = update_method(
                 epoch,
-                _net_params,
-                _opt_state,
+                net_params,
+                opt_state,
                 Xd,
                 Xf,
                 boundary,
