@@ -39,8 +39,7 @@ def transform_cmplx_haiku_model(model, **model_kwargs):
     return network
 
 
-def initialize_cmplx_haiku_model(network, dummy_input, rng_seed=0):
-    key = jax.random.PRNGKey(rng_seed)
+def initialize_cmplx_haiku_model(network, dummy_input, key):
     net_params, net_state = network.init(key, **dummy_input)
     return net_params, net_state
 

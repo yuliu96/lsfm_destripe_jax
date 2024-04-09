@@ -38,87 +38,96 @@ from destripe_jax.utils import prepare_aux, global_correction, fusion_perslice
 class DeStripe:
     def __init__(
         self,
-        is_vertical: bool = True,
-        angleOffset: List = [0],
-        losseps: float = 10,
+        loss_eps: float = 10,
         qr: float = 0.5,
-        resampleRatio: int = 2,
-        KGF: int = 29,
-        KGFh: int = 29,
-        HKs: float = 0.5,
+        resample_ratio: int = 3,
+        GF_kernel_size_train: int = 29,
+        GF_kernel_size_inference: int = 29,
+        hessian_kernel_sigma: float = 1,
         sampling_in_MSEloss: int = 2,
         isotropic_hessian: bool = True,
         lambda_tv: float = 1,
         lambda_hessian: float = 1,
         inc: int = 16,
         n_epochs: int = 300,
-        deg: float = 29,
-        Nneighbors: int = 16,
+        wedge_degree: float = 29,
+        n_neighbors: int = 16,
         fast_GF: bool = False,
         require_global_correction: bool = True,
-        GF_kernel_size: int = 49,
-        Gaussian_kernel_size: int = 49,
+        fusion_GF_kernel_size: int = 49,
+        fusion_Gaussian_kernel_size: int = 49,
+        device: str = None,
     ):
         self.train_params = {
             "fast_GF": fast_GF,
-            "KGF": KGF,
-            "KGFh": KGFh,
-            "losseps": losseps,
-            "Nneighbors": Nneighbors,
+            "GF_kernel_size_train": GF_kernel_size_train,
+            "GF_kernel_size_inference": GF_kernel_size_inference,
+            "loss_eps": loss_eps,
+            "n_neighbors": n_neighbors,
             "inc": inc,
-            "HKs": HKs,
+            "hessian_kernel_sigma": hessian_kernel_sigma,
             "lambda_tv": lambda_tv,
             "lambda_hessian": lambda_hessian,
-            "sampling": sampling_in_MSEloss,
-            "resampleRatio": [resampleRatio, resampleRatio],
-            "f": isotropic_hessian,
+            "sampling_in_MSEloss": sampling_in_MSEloss,
+            "resample_ratio": resample_ratio,
+            "isotropic_hessian": isotropic_hessian,
             "n_epochs": n_epochs,
-            "deg": deg,
+            "wedge_degree": wedge_degree,
             "qr": qr,
-            "GFr": GF_kernel_size,
-            "Gaussianr": Gaussian_kernel_size,
-            "angleOffset": angleOffset,
-        }
-        self.sample_params = {
+            "fusion_GF_kernel_size": fusion_GF_kernel_size,
+            "fusion_Gaussian_kernel_size": fusion_Gaussian_kernel_size,
             "require_global_correction": require_global_correction,
-            "is_vertical": is_vertical,
         }
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        if device is None:
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        else:
+            self.device = device
 
     @staticmethod
     def train_on_one_slice(
         network,
         GuidedFilterHRModel,
         update_method,
-        rng_seq: Iterator[PRNGKey],
         sample_params: Dict,
         train_params: Dict,
         X: np.ndarray,
-        map: np.ndarray = None,
-        dualtarget: np.ndarray = None,
+        mask: np.ndarray = None,
         boundary: np.ndarray = None,
         s_: int = 1,
         z: int = 1,
-        device: str = "cuda",
+        device: str = "cpu",
     ):
+        rng_seq = hk.PRNGSequence(random.PRNGKey(0))
         md = (
             sample_params["md"] if sample_params["is_vertical"] else sample_params["nd"]
         )
         nd = (
             sample_params["nd"] if sample_params["is_vertical"] else sample_params["md"]
         )
-        # put on cuda
-        X, map = jnp.array(X), jnp.array(map)
         if sample_params["view_num"] > 1:
-            assert X.shape[1] == 2, print("input X must have 2 channels")
+            assert X.shape[1] == 2, print("input X must have 2 channels.")
             assert isinstance(boundary, np.ndarray), print(
-                "dual-view fusion boundary is missing"
+                "dual-view fusion boundary is missing."
             )
-            assert isinstance(dualtarget, np.ndarray), print(
-                "dual-view fusion result is missing"
-            )
-            dualtarget = jnp.array(dualtarget)
             boundary = jnp.array(boundary)
+            kernel = torch.ones(
+                1,
+                1,
+                train_params["fusion_Gaussian_kernel_size"],
+                train_params["fusion_Gaussian_kernel_size"],
+            ).to(device) / (train_params["fusion_Gaussian_kernel_size"] ** 2)
+            dualtarget_numpy = fusion_perslice(
+                GuidedFilter(r=train_params["fusion_GF_kernel_size"], eps=1),
+                GuidedFilter(r=9, eps=1e-6),
+                10 ** X[:, :1, :, :],
+                10 ** X[:, 1:, :, :],
+                train_params["fusion_Gaussian_kernel_size"],
+                kernel,
+                boundary,
+                device=device,
+            )
+            dualtarget = jnp.array(np.log10(dualtarget_numpy[None, None, :, :]))
+        X, mask = jnp.array(X), jnp.array(mask)
         # downsample
         Xd = []
         for ind in range(X.shape[1]):
@@ -132,8 +141,8 @@ class DeStripe:
             dualtargetd = jax.image.resize(
                 dualtarget, (1, 1, md, nd), method="bilinear"
             )
-        map = jax.image.resize(map, (1, 1, md, nd), method="bilinear")
-        map = (map > 0).astype(jnp.float32)
+        mask = jax.image.resize(mask, (1, 1, md, nd), method="bilinear")
+        mask = (mask > 0).astype(jnp.float32)
         # to Fourier
         Xf = (
             jnp.fft.fftshift(jnp.fft.fft2(Xd))
@@ -149,11 +158,12 @@ class DeStripe:
                 "target": Xd if sample_params["view_num"] == 1 else dualtargetd,
                 "boundary": boundary,
             },
+            rng_seq,
         )
         opt_init, _, _ = cADAM(0.01)
         _opt_state = opt_init(_net_params)
         smoothedTarget = GuidedFilterLoss(
-            r=train_params["KGF"], eps=train_params["losseps"]
+            r=train_params["GF_kernel_size_train"], eps=train_params["loss_eps"]
         )(Xd, Xd)
         for epoch in tqdm.tqdm(
             range(train_params["n_epochs"]),
@@ -169,14 +179,14 @@ class DeStripe:
                 boundary,
                 Xd if sample_params["view_num"] == 1 else dualtargetd,
                 smoothedTarget,
-                map,
+                mask,
                 next(rng_seq),
                 _net_state,
             )
         with torch.no_grad():
             m, n = X.shape[-2:]
-            if train_params["fast_GF"] == False:
-                resultslice = np.zeros_like(X)
+            resultslice = np.zeros(X.shape, dtype=np.float32)
+            if not train_params["fast_GF"]:
                 for index in range(X.shape[1]):
                     input2 = X[:, index : index + 1, :, :]
                     input1 = jax.image.resize(
@@ -194,15 +204,12 @@ class DeStripe:
                         .data.numpy()
                     )
                 if X.shape[1] > 1:
-                    kernel = torch.ones(
-                        1, 1, train_params["Gaussianr"], train_params["Gaussianr"]
-                    ).to(device) / (train_params["Gaussianr"] ** 2)
                     Y = fusion_perslice(
-                        GuidedFilter(r=train_params["GFr"], eps=1),
+                        GuidedFilter(r=train_params["fusion_GF_kernel_size"], eps=1),
                         GuidedFilter(r=9, eps=1e-6),
                         resultslice[:, :1, :, :],
                         resultslice[:, 1:, :, :],
-                        train_params["Gaussianr"],
+                        train_params["fusion_Gaussian_kernel_size"],
                         kernel,
                         torch.tensor(np.asarray(boundary)).to(device),
                         device=device,
@@ -210,25 +217,41 @@ class DeStripe:
                 else:
                     Y = resultslice[0, 0]
             else:
-                Y = (
-                    10
-                    ** GuidedFilterHRModel(
-                        (
-                            torch.tensor(np.asarray(Xd)).to(device)
-                            if sample_params["view_num"] == 1
-                            else torch.tensor(np.asarray(dualtargetd)).to(device)
-                        ),
-                        torch.tensor(np.asarray(Y_GNN)).to(device),
-                        (
-                            torch.tensor(np.asarray(X)).to(device)
-                            if sample_params["view_num"] == 1
-                            else torch.tensor(np.asarray(dualtarget)).to(device)
-                        ),
+                for index in range(X.shape[1]):
+                    resultslice[:, index : index + 1, :, :] = (
+                        10
+                        ** GuidedFilterHRModel(
+                            torch.tensor(np.asarray(Xd[:, index : index + 1, :, :])).to(
+                                device
+                            ),
+                            torch.tensor(
+                                np.asarray(Y_raw[:, index : index + 1, :, :])
+                            ).to(device),
+                            torch.tensor(np.asarray(X[:, index : index + 1, :, :])).to(
+                                device
+                            ),
+                        )
+                        .cpu()
+                        .data.numpy()[0, 0]
                     )
-                    .cpu()
-                    .data.numpy()[0, 0]
-                )
-            return Y, resultslice[0] if sample_params["view_num"] > 1 else None
+                if X.shape[1] > 1:
+                    Y = fusion_perslice(
+                        GuidedFilter(r=train_params["fusion_GF_kernel_size"], eps=1),
+                        GuidedFilter(r=9, eps=1e-6),
+                        resultslice[:, :1, :, :],
+                        resultslice[:, 1:, :, :],
+                        train_params["fusion_Gaussian_kernel_size"],
+                        kernel,
+                        torch.tensor(np.asarray(boundary)).to(device),
+                        device=device,
+                    )
+                else:
+                    Y = resultslice[0, 0]
+            return (
+                Y,
+                resultslice[0] if sample_params["view_num"] > 1 else None,
+                dualtarget_numpy if sample_params["view_num"] > 1 else None,
+            )
 
     @staticmethod
     def train_on_full_arr(
@@ -249,7 +272,6 @@ class DeStripe:
             train_params = destripe_train_params()
         else:
             train_params = destripe_train_params(**train_params)
-        rng_seq = hk.PRNGSequence(random.PRNGKey(0))
         z, view_num, m, n = X.shape
         result = np.zeros((z, m, n), dtype=np.uint16)
         mean = np.zeros(z)
@@ -294,8 +316,6 @@ class DeStripe:
                 Angle=sample_params["angle_offset"],
                 device=device,
             )
-        """.editorconfig"""
-        """.editorconfig"""
         hier_mask, hier_ind, NI = (
             jnp.asarray(train_params["hier_mask"]),
             jnp.asarray(train_params["hier_ind"]),
@@ -338,7 +358,6 @@ class DeStripe:
                 network,
                 GuidedFilterHRModel,
                 update_method,
-                rng_seq,
                 sample_params,
                 train_params,
                 Ov,
