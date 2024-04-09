@@ -46,6 +46,7 @@ requirements = [
     "aicsimageio",
     "tqdm",
     "matplotlib",
+    "dm-haiku",
 ]
 
 extra_requirements = {
