@@ -115,7 +115,7 @@ def compute_curvature_profile(mask, min_contour_length, window_size_ratio):
 
         return edge_pixels, curvature_values
     else:
-        return np.zeros(2, dtype=np.int32), np.zeros(2, dtype=np.int32)
+        return np.zeros((1, 2), dtype=np.int32), np.zeros(1, dtype=np.int32)
 
 
 def plot_edges_with_curvature(mask, min_contour_length, window_size_ratio):
