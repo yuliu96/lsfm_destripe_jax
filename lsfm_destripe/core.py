@@ -146,7 +146,7 @@ class DeStripe:
             dualtargetd = resize(
                 dualtarget, (1, 1, md, nd), order = 1, anti_aliasing = False,
             )
-        mask = resize(mask+.0, (1, 1, md, nd), order = 1, anti_aliasing = False,)
+        mask = resize(mask+.0, (1, 1, md, nd), order = 1, anti_aliasing = False,)+generate_mask(dualtargetd if sample_params["view_num"] > 1 else Xd) 
         X = jnp.array(X)
         mask = jnp.array(mask)
         mask = (mask > 0).astype(jnp.float32)
