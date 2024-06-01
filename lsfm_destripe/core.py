@@ -114,7 +114,7 @@ class DeStripe:
             assert isinstance(boundary, np.ndarray), print(
                 "dual-view fusion boundary is missing."
             )
-            boundary = jnp.array(boundary)
+            boundary = jnp.array(boundary + 0.0)
             kernel = torch.ones(
                 1,
                 1,
