@@ -39,6 +39,7 @@ from lsfm_destripe.utils import (
 from lsfm_destripe.generate_curvature_mask import generate_mask
 from skimage.transform import resize
 
+
 class DeStripe:
     def __init__(
         self,
@@ -127,26 +128,37 @@ class DeStripe:
                 10 ** X[:, 1:, :, :],
                 train_params["fusion_Gaussian_kernel_size"],
                 kernel,
-                boundary,
+                torch.tensor(np.asarray(boundary)).to(device),
                 device=device,
             )
             dualtarget = np.log10(dualtarget_numpy[None, None, :, :])
-        #mask = mask + generate_mask(mask)
-        #X, mask = jnp.array(X), jnp.array(mask)
+        # mask = mask + generate_mask(mask)
+        # X, mask = jnp.array(X), jnp.array(mask)
         # downsample
         Xd = []
         for ind in range(X.shape[1]):
             Xd.append(
                 resize(
-                    X[:, ind : ind + 1, :, :], (1, 1, md, nd), order = 1, anti_aliasing = False,
+                    X[:, ind : ind + 1, :, :],
+                    (1, 1, md, nd),
+                    order=1,
+                    anti_aliasing=False,
                 )
             )
         Xd = np.concatenate(Xd, 1)
         if sample_params["view_num"] > 1:
             dualtargetd = resize(
-                dualtarget, (1, 1, md, nd), order = 1, anti_aliasing = False,
+                dualtarget,
+                (1, 1, md, nd),
+                order=1,
+                anti_aliasing=False,
             )
-        mask = resize(mask+.0, (1, 1, md, nd), order = 1, anti_aliasing = False,)+generate_mask(dualtargetd if sample_params["view_num"] > 1 else Xd) 
+        mask = resize(
+            mask + 0.0,
+            (1, 1, md, nd),
+            order=1,
+            anti_aliasing=False,
+        ) + generate_mask(dualtargetd if sample_params["view_num"] > 1 else Xd)
         X = jnp.array(X)
         mask = jnp.array(mask)
         mask = (mask > 0).astype(jnp.float32)
@@ -200,7 +212,7 @@ class DeStripe:
                     input1 = jax.image.resize(
                         Y_raw[:, index : index + 1, :, :],
                         (1, 1, m, n),
-                        method="bilinear", 
+                        method="bilinear",
                         antialias=False,
                     )
                     input1, input2 = torch.tensor(np.asarray(input1)).to(
