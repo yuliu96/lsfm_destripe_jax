@@ -199,7 +199,6 @@ def destripe_train_params(
     fast_GF: bool = False,
     fusion_GF_kernel_size: int = 49,
     fusion_Gaussian_kernel_size: int = 49,
-    angle_offset: list = [0],
     require_global_correction: bool = True,
 ):
     kwargs = locals()
