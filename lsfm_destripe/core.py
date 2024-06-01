@@ -336,7 +336,7 @@ class DeStripe:
                 else sample_params["md"]
             ),
             resampleRatio=train_params["resample_ratio"],
-            Angle=train_params["angle_offset"],
+            Angle=sample_params["angle_offset"],
             NI=NI,
             hier_mask=hier_mask,
             hier_ind=hier_ind,

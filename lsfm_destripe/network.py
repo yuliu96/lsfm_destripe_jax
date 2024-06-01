@@ -443,7 +443,7 @@ class Loss:
         super().__init__()
         self.lambda_tv = train_params["lambda_tv"]
         self.lambda_hessian = train_params["lambda_hessian"]
-        self.angleOffset = train_params["angle_offset"]
+        self.angleOffset = shape_params["angle_offset"]
         self.sampling = train_params["sampling_in_MSEloss"]
         self.f = train_params["isotropic_hessian"]
         if train_params["hessian_kernel_sigma"] > 0.5:
