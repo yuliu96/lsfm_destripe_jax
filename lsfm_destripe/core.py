@@ -131,7 +131,7 @@ class DeStripe:
                 device=device,
             )
             dualtarget = np.log10(dualtarget_numpy[None, None, :, :])
-        mask = mask + generate_mask(mask)
+        #mask = mask + generate_mask(mask)
         #X, mask = jnp.array(X), jnp.array(mask)
         # downsample
         Xd = []
