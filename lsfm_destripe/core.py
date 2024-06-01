@@ -36,7 +36,8 @@ from lsfm_destripe.utils import (
     fusion_perslice,
     destripe_train_params,
 )
-
+from lsfm_destripe.generate_curvature_mask import generate_mask
+from skimage.transform import resize
 
 class DeStripe:
     def __init__(
@@ -129,23 +130,29 @@ class DeStripe:
                 boundary,
                 device=device,
             )
-            dualtarget = jnp.array(np.log10(dualtarget_numpy[None, None, :, :]))
-        X, mask = jnp.array(X), jnp.array(mask)
+            dualtarget = np.log10(dualtarget_numpy[None, None, :, :])
+        mask = mask + generate_mask(mask)
+        #X, mask = jnp.array(X), jnp.array(mask)
         # downsample
         Xd = []
         for ind in range(X.shape[1]):
             Xd.append(
-                jax.image.resize(
-                    X[:, ind : ind + 1, :, :], (1, 1, md, nd), method="bilinear"
+                resize(
+                    X[:, ind : ind + 1, :, :], (1, 1, md, nd), order = 1, anti_aliasing = False,
                 )
             )
-        Xd = jnp.concatenate(Xd, 1)
+        Xd = np.concatenate(Xd, 1)
         if sample_params["view_num"] > 1:
-            dualtargetd = jax.image.resize(
-                dualtarget, (1, 1, md, nd), method="bilinear"
+            dualtargetd = resize(
+                dualtarget, (1, 1, md, nd), order = 1, anti_aliasing = False,
             )
-        mask = jax.image.resize(mask, (1, 1, md, nd), method="bilinear")
+        mask = resize(mask, (1, 1, md, nd), order = 1, anti_aliasing = False,)
+        X = jnp.array(X)
+        mask = jnp.array(mask)
+        dualtarget = jnp.array(dualtarget)
         mask = (mask > 0).astype(jnp.float32)
+        Xd = jnp.array(Xd)
+        dualtargetd = jnp.array(dualtargetd)
         # to Fourier
         Xf = (
             jnp.fft.fftshift(jnp.fft.fft2(Xd))

@@ -99,8 +99,9 @@ def plot_edges_with_curvature(mask, min_contour_length, window_size_ratio):
 
 
 def generate_mask(mask,min_contour_length = 20,window_size_ratio = 5):
+    mask = mask[0, 0]
     img_blur = (mask - mask.min()) / (mask.max()-mask.min()) *255
     ot = skimage.filters.threshold_otsu(img_blur)
     edges = cv2.Canny(image=img_blur.astype(np.uint8), threshold1=ot, threshold2=ot*2) # Canny Edge Detection
     mask_de = plot_edges_with_curvature(edges, min_contour_length, window_size_ratio)
-    return mask_de
+    return mask_de[None, None]
