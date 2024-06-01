@@ -89,9 +89,8 @@ class GuidedFilterHR(nn.Module):
             list_ = np.arange(XX.shape[-1])
             g, o = 64, 10
             list_ = [list_[i : i + g] for i in range(0, len(list_), g - o)]
-            if len(list_[-1]) <= 5:
-                list_[-2] = np.arange(list_[-2][0], XX.shape[-1]).tolist()
-                del list_[-1]
+            list_[-2] = np.arange(list_[-2][0], XX.shape[-1]).tolist()
+            del list_[-1]
             for index, i in enumerate(list_):
                 Xbase, Xdetail, ybase, ydetail = (
                     XXbase[..., i[0] : i[-1] + 1],
