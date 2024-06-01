@@ -149,10 +149,11 @@ class DeStripe:
         mask = resize(mask+.0, (1, 1, md, nd), order = 1, anti_aliasing = False,)
         X = jnp.array(X)
         mask = jnp.array(mask)
-        dualtarget = jnp.array(dualtarget)
         mask = (mask > 0).astype(jnp.float32)
         Xd = jnp.array(Xd)
-        dualtargetd = jnp.array(dualtargetd)
+        if sample_params["view_num"] > 1:
+            dualtarget = jnp.array(dualtarget)
+            dualtargetd = jnp.array(dualtargetd)
         # to Fourier
         Xf = (
             jnp.fft.fftshift(jnp.fft.fft2(Xd))
