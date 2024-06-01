@@ -200,7 +200,8 @@ class DeStripe:
                     input1 = jax.image.resize(
                         Y_raw[:, index : index + 1, :, :],
                         (1, 1, m, n),
-                        method="bilinear",
+                        method="bilinear", 
+                        antialias=False,
                     )
                     input1, input2 = torch.tensor(np.asarray(input1)).to(
                         device
