@@ -161,8 +161,6 @@ class DeStripe:
         ) + generate_mask(
             10 ** dualtargetd if sample_params["view_num"] > 1 else 10**Xd
         )
-        plt.imshow(mask[0, 0])
-        plt.show()
         X = jnp.array(X)
         mask = jnp.array(mask)
         mask = (mask > 0).astype(jnp.float32)
