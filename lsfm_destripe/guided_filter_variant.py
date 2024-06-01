@@ -11,7 +11,7 @@ class GuidedFilterHR(nn.Module):
         super(GuidedFilterHR, self).__init__()
         self.eps = eps
         self.AngleNum = len(Angle)
-        self.Angle = Angle
+        self.Angle = (-1*np.array(Angle)).tolist()
         self.PR, self.PC, self.KERNEL = [], [], []
         for rx, ry in zip(rX, rY):
             self.KERNEL.append(torch.ones((1, 1, rx * 2 + 1, ry * 2 + 1)).to(device))
