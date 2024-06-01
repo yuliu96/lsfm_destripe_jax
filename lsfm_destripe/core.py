@@ -158,7 +158,9 @@ class DeStripe:
             (1, 1, md, nd),
             order=1,
             anti_aliasing=False,
-        ) + generate_mask(dualtargetd if sample_params["view_num"] > 1 else Xd)
+        ) + generate_mask(
+            10 ** dualtargetd if sample_params["view_num"] > 1 else 10**Xd
+        )
         X = jnp.array(X)
         mask = jnp.array(mask)
         mask = (mask > 0).astype(jnp.float32)
