@@ -38,6 +38,7 @@ from lsfm_destripe.utils import (
 )
 from lsfm_destripe.generate_curvature_mask import generate_mask
 from skimage.transform import resize
+import tifffile
 
 
 class DeStripe:
@@ -280,13 +281,17 @@ class DeStripe:
     def train_on_full_arr(
         X: Union[np.ndarray, da.core.Array],
         is_vertical: bool,
-        angle_offset: List,
+        angle_offset_X1: List,
+        angle_offset_X2: List,
         mask: Union[np.ndarray, da.core.Array],
         train_params: Dict = None,
         boundary: np.ndarray = None,
         display: bool = False,
         device: str = "cpu",
     ):
+        angle_offset = angle_offset_X1 + angle_offset_X2
+        angle_offset = list(set(angle_offset))
+        print(angle_offset)
         sample_params = {
             "is_vertical": is_vertical,
             "angle_offset": angle_offset,
@@ -439,8 +444,9 @@ class DeStripe:
         self,
         X1: Union[str, np.ndarray, da.core.Array],
         is_vertical: bool,
-        angle_offset: List,
+        angle_offset_X1: List,
         X2: Union[str, np.ndarray, da.core.Array] = None,
+        angle_offset_X2: List = [],
         mask: Union[str, np.ndarray, da.core.Array] = None,
         boundary: Union[str, np.ndarray] = None,
         display: bool = False,
@@ -473,7 +479,7 @@ class DeStripe:
                 "dual-view fusion boundary is missing."
             )
             if isinstance(boundary, str):
-                boundary = np.load(boundary)
+                boundary = tifffile.imread(boundary)
             assert boundary.shape == (z, n) if is_vertical else (z, m), print(
                 "boundary index should be of shape [z_slices, n columns]."
             )
@@ -481,7 +487,8 @@ class DeStripe:
         out = self.train_on_full_arr(
             X,
             is_vertical,
-            angle_offset,
+            angle_offset_X1,
+            angle_offset_X2,
             mask_data,
             self.train_params,
             boundary,
