@@ -223,7 +223,12 @@ class DeStripe:
                     ), torch.tensor(np.asarray(input2)).to(device)
                     resultslice[:, index : index + 1, :, :] = (
                         10
-                        ** GuidedFilterHRModel(input2, input1, r=train_params["qr"])
+                        ** GuidedFilterHRModel(
+                            input2,
+                            input1,
+                            angle_list=sample_params["angle_offset_X{}".format(index)],
+                            r=train_params["qr"],
+                        )
                         .cpu()
                         .data.numpy()
                     )
@@ -291,10 +296,11 @@ class DeStripe:
     ):
         angle_offset = angle_offset_X1 + angle_offset_X2
         angle_offset = list(set(angle_offset))
-        print(angle_offset)
         sample_params = {
             "is_vertical": is_vertical,
             "angle_offset": angle_offset,
+            "angle_offset_X1": angle_offset_X1,
+            "angle_offset_X2": angle_offset_X2,
         }
         if train_params is None:
             train_params = destripe_train_params()
@@ -341,7 +347,6 @@ class DeStripe:
                 rY=[0, 0],
                 m=(m if sample_params["is_vertical"] else n),
                 n=(n if sample_params["is_vertical"] else m),
-                Angle=sample_params["angle_offset"],
                 device=device,
             )
         hier_mask, hier_ind, NI = (

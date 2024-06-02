@@ -7,11 +7,9 @@ from scipy import ndimage
 
 
 class GuidedFilterHR(nn.Module):
-    def __init__(self, rX, rY, Angle, m, n, eps=1e-9, device="cpu"):
+    def __init__(self, rX, rY, m, n, eps=1e-9, device="cpu"):
         super(GuidedFilterHR, self).__init__()
         self.eps = eps
-        self.AngleNum = len(Angle)
-        self.Angle = (-1*np.array(Angle)).tolist()
         self.PR, self.PC, self.KERNEL = [], [], []
         for rx, ry in zip(rX, rY):
             self.KERNEL.append(torch.ones((1, 1, rx * 2 + 1, ry * 2 + 1)).to(device))
@@ -76,9 +74,9 @@ class GuidedFilterHR(nn.Module):
         weight[:] = weight / weight.sum(-1, keepdim=True)
         return weight
 
-    def forward(self, X, y, r):
+    def forward(self, X, y, angle_list, r):
         sigma = r * (y.max() - y.min())
-        for i, angle in enumerate(self.Angle):
+        for i, angle in enumerate((-1 * np.array(angle_list)).tolist()):
             XX = torchvision.transforms.functional.rotate(X, angle, expand=True)
             yy = torchvision.transforms.functional.rotate(y, angle, expand=True)
             bdetail, Abase, bbase = [], [], []
