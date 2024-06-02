@@ -226,7 +226,9 @@ class DeStripe:
                         ** GuidedFilterHRModel(
                             input2,
                             input1,
-                            angle_list=sample_params["angle_offset_X{}".format(index)],
+                            angle_list=sample_params[
+                                "angle_offset_X{}".format(index + 1)
+                            ],
                             r=train_params["qr"],
                         )
                         .cpu()
