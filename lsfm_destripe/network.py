@@ -455,10 +455,23 @@ class Loss:
             self.DGaussxx, self.DGaussyy, self.DGaussxy = self.generateHessianKernel2(
                 train_params["hessian_kernel_sigma"], shape_params
             )
-        self.Dy, self.Dx = (
-            jnp.array([[1], [-1]], dtype=jnp.float32)[None, None],
-            jnp.array([[1, -1]], dtype=jnp.float32)[None, None],
+
+        # self.Dy, self.Dx = (
+        #     jnp.array([[1], [-1]], dtype=jnp.float32)[None, None],
+        #     jnp.array([[1, -1]], dtype=jnp.float32)[None, None],
+        # )
+        offset = sum(shape_params["angle_offset"]) / len(shape_params["angle_offset"])
+        gx, gy = self.rotatableKernel(Wsize=3, sigma=1)
+        self.Dx = (
+            math.cos(-offset / 180 * math.pi) * gx
+            + math.sin(-offset / 180 * math.pi) * gy
         )
+        self.Dy = (
+            math.cos(-offset / 180 * math.pi + math.pi / 2) * gx
+            + math.sin(-offset / 180 * math.pi + math.pi / 2) * gy
+        )
+        self.Dx, self.Dy = self.Dx[None, None], self.Dy[None, None]
+
         self.GuidedFilterLoss = GuidedFilterLoss(
             r=train_params["GF_kernel_size_train"],
             eps=train_params["loss_eps"],
@@ -503,9 +516,9 @@ class Loss:
         )
 
     def rotatableKernel(self, Wsize, sigma):
-        k = torch.linspace(-Wsize, Wsize, 2 * Wsize + 1)[None, :]
-        g = torch.exp(-(k**2) / (2 * sigma**2))
-        gp = -(k / sigma) * torch.exp(-(k**2) / (2 * sigma**2))
+        k = jnp.linspace(-Wsize, Wsize, 2 * Wsize + 1)[None, :]
+        g = jnp.exp(-(k**2) / (2 * sigma**2))
+        gp = -(k / sigma) * jnp.exp(-(k**2) / (2 * sigma**2))
         return g.T * gp, gp.T * g
 
     def generateHessianKernel(self, Sigma):
