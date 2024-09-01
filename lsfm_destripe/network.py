@@ -132,6 +132,10 @@ class GuidedFilterJAX(hk.Module):
                 ),
             ] = k
         self.kernel = jax.device_put(self.kernel)
+        import matplotlib.pyplot as plt
+
+        plt.imshow(self.kernel[0, 0])
+        plt.show()
         self.pr, self.pc = self.kernel.shape[-1] // 2, self.kernel.shape[-2] // 2
         XN = jnp.ones((1, 1, m, n))
         self.N = [
