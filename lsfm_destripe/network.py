@@ -471,7 +471,7 @@ class Loss:
             + math.sin(-offset / 180 * math.pi + math.pi / 2) * gy
         )
         self.Dx, self.Dy = self.Dx[None, None], self.Dy[None, None]
-        self.Dx, self.Dy = (
+        self.Dy, self.Dx = (
             jnp.array([[-1, 1]])[None, None].astype(jnp.float32),
             jnp.array([[-1], [1]])[None, None].astype(jnp.float32),
         )
