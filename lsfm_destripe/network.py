@@ -620,9 +620,13 @@ class Loss:
         map,
     ):
         outputGNNraw, outputGNN, outputLR = network.apply(params, **inputs)
+        import matplotlib.pyplot as plt
+
+        plt.imshow(jnp.squeeze(map))
+        plt.show()
         mse = jnp.sum(
             jnp.abs(smoothedTarget - self.GuidedFilterLoss(outputGNNraw, outputGNNraw))
-        ) + jnp.sum(
+        ) + 10 * jnp.sum(
             (jnp.abs(targets - outputGNN) * map)[
                 :, :, :: self.sampling, :: self.sampling
             ]
