@@ -622,7 +622,7 @@ class Loss:
         outputGNNraw, outputGNN, outputLR = network.apply(params, **inputs)
         mse = jnp.sum(
             jnp.abs(smoothedTarget - self.GuidedFilterLoss(outputGNNraw, outputGNNraw))
-        ) + 10 * jnp.sum(
+        ) + 5 * jnp.sum(
             (jnp.abs(targets - outputGNN) * map)[
                 :, :, :: self.sampling, :: self.sampling
             ]
