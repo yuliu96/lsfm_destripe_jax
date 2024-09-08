@@ -481,9 +481,13 @@ class Loss:
         Wsize = math.ceil(3 * Sigma)
         KernelSize = 2 * (2 * Wsize + 1) - 1
         gx, gy = self.rotatableKernel(Wsize, Sigma)
+
+        gx = torch.from_numpy(np.asarray(gx).astype(np.float32))
+        gy = torch.from_numpy(np.asarray(gy).astype(np.float32))
+
         md = shape_params["md"] if shape_params["is_vertical"] else shape_params["nd"]
         nd = shape_params["nd"] if shape_params["is_vertical"] else shape_params["md"]
-        gxFFT2, gyFFT2 = jnp.fft.fft2(gx, s=(md, nd)), jnp.fft.fft2(gy, s=(md, nd))
+        gxFFT2, gyFFT2 = fft.fft2(gx, s=(md, nd)), fft.fft2(gy, s=(md, nd))
         DGaussxx = torch.zeros(len(self.angleOffset), 1, KernelSize, KernelSize)
         DGaussxy = torch.zeros(len(self.angleOffset), 1, KernelSize, KernelSize)
         DGaussyy = torch.zeros(len(self.angleOffset), 1, KernelSize, KernelSize)
