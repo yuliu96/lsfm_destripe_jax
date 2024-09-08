@@ -471,6 +471,10 @@ class Loss:
             + math.sin(-offset / 180 * math.pi + math.pi / 2) * gy
         )
         self.Dx, self.Dy = self.Dx[None, None], self.Dy[None, None]
+        self.Dx, self.Dy = (
+            jnp.array([[-1, 1]])[None, None],
+            jnp.array([[-1], [1]])[None, None],
+        )
 
         self.GuidedFilterLoss = GuidedFilterLoss(
             r=train_params["GF_kernel_size_train"],
