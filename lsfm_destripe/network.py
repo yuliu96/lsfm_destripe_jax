@@ -107,7 +107,7 @@ class GuidedFilterJAX(hk.Module):
                 kernel[:, rx * 2] = 1
             else:
                 kernel[:, rx * 2 - ry : rx * 2 + ry + 1] = 1
-            kernel = ndimage.rotate(kernel, A, reshape=False, order=2)[
+            kernel = ndimage.rotate(kernel, A, axes=(-2, -1), reshape=False, order=2)[
                 rx : 3 * rx + 1, rx : 3 * rx + 1
             ]
             r, c = sum(kernel.sum(1) != 0) // 2 * 2, sum(kernel.sum(0) != 0) // 2 * 2

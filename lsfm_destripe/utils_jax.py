@@ -62,6 +62,7 @@ class update_jax:
         y,
         smoothedTarget,
         map,
+        hy,
     ):
         (l, (A, B, C)), grads = value_and_grad(self.loss, has_aux=True)(
             params,
@@ -70,6 +71,7 @@ class update_jax:
             y,
             smoothedTarget,
             map,
+            hy,
         )
         grads = jax.tree_map(jnp.conjugate, grads)
         opt_state = self.opt_update(step, grads, opt_state)
