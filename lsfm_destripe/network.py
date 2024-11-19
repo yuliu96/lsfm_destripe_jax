@@ -205,7 +205,7 @@ class dual_view_fusion:
     def __call__(self, x, boundary):
         boundary = (
             jax.image.resize(boundary, (1, 1, 1, self.n), method="bilinear")
-            / self.resampleRatio
+            / max(self.resampleRatio)
         )
         topSlice, bottomSlice = jnp.split(x, indices_or_sections=2, axis=1)
         mask0, mask1 = self.mask > boundary, self.mask <= boundary
