@@ -7,7 +7,11 @@ from functools import partial
 
 
 class Loss:
-    def __init__(self, train_params, shape_params, device="gpu"):
+    def __init__(
+        self,
+        train_params,
+        shape_params,
+    ):
         super().__init__()
         self.lambda_tv = train_params["lambda_tv"]
         self.lambda_hessian = train_params["lambda_hessian"]

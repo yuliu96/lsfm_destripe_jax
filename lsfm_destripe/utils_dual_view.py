@@ -59,6 +59,8 @@ def fusion_perslice(
     boundary,
     GFr,
 ):
+    topSlice = 10**topSlice
+    bottomSlice = 10**bottomSlice
     GFr = [1, GFr]
     topMask = (jnp.arange(topSlice.shape[-2])[None, None, :, None] < boundary).astype(
         jnp.float32
@@ -98,4 +100,4 @@ def fusion_perslice(
     result = jnp.clip(bottom_seg + top_seg, minn, maxx)
     bottom_seg = jnp.clip(bottom_seg, bottomSlice.min(), bottomSlice.max())
     top_seg = jnp.clip(top_seg, topSlice.min(), topSlice.max())
-    return result[0, 0], jnp.stack((result1[0, 0], result0[0, 0]), 0)[None]
+    return jnp.log10(result), jnp.stack((result1[0, 0], result0[0, 0]), 0)[None]
