@@ -152,6 +152,12 @@ class Loss:
             else self.TotalVariationLoss_plain
         )
 
+        self.hessian_cal = (
+            self.HessianRegularizationLoss
+            if len(self.angleOffset) > 1
+            else self.HessianRegularizationLoss_plain
+        )
+
     def total_variation_kernel(self, angle_list):
         gx, gy = self.rotatableKernel(Wsize=3, sigma=1)
         Dx_ = []
@@ -312,6 +318,46 @@ class Loss:
             ).sum()
         )
 
+    @partial(jit, static_argnums=0)
+    def HessianRegularizationLoss_plain(
+        self, x, target, DGaussxx, DGaussyy, DGaussxy, mask, ind
+    ):
+        return (
+            (
+                jnp.abs(
+                    jax.lax.conv_general_dilated(
+                        jnp.pad(x, self.p_hessian, "reflect"),
+                        DGaussxx,
+                        (1, 1),
+                        "VALID",
+                        feature_group_count=x.shape[1],
+                    ),
+                )
+                * mask
+            ).sum()
+            + mask.sum()
+            / mask.size
+            * jnp.abs(
+                jax.lax.conv_general_dilated(
+                    jnp.pad(x - target, self.p_hessian, "reflect"),
+                    DGaussyy,
+                    (1, 1),
+                    "VALID",
+                ),
+            ).sum()
+            + 2
+            * mask.sum()
+            / mask.size
+            * jnp.abs(
+                jax.lax.conv_general_dilated(
+                    jnp.pad(x - target, self.p_hessian, "reflect"),
+                    DGaussxy,
+                    (1, 1),
+                    "VALID",
+                ),
+            ).sum()
+        )
+
     def __call__(
         self,
         params,
@@ -390,7 +436,7 @@ class Loss:
             mask_dict["ind_hessian"],
         )
 
-        hessian = hessian + self.HessianRegularizationLoss(
+        hessian = hessian + self.hessian_cal(
             outputGNNraw_original_f,
             targets_f,
             self.DGaussxx_f,
