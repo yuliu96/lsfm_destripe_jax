@@ -203,7 +203,6 @@ def destripe_train_params(
     n_epochs: int = 300,
     wedge_degree: float = 29,
     n_neighbors: int = 16,
-    fast_GF: bool = False,
     fusion_GF_kernel_size: int = 49,
     fusion_Gaussian_kernel_size: int = 49,
     require_global_correction: bool = True,
