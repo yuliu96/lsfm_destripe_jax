@@ -115,7 +115,6 @@ class update_jax:
                 "Xf": xf,
                 "boundary": boundary,
                 "target": y,
-                "target_hr": hy,
             },
             y,
             mask_dict,
