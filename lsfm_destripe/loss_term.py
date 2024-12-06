@@ -15,7 +15,6 @@ class Loss:
         super().__init__()
         self.lambda_tv = train_params["lambda_tv"]
         self.lambda_hessian = train_params["lambda_hessian"]
-        self.f = train_params["isotropic_hessian"]
         self.angleOffset = shape_params["angle_offset"]
 
         self.DGaussxx_f, self.DGaussyy_f, self.DGaussxy_f = [], [], []
@@ -148,7 +147,7 @@ class Loss:
         self.p_hessian_f = ((0, 0), (0, 0), self.p_hessian[2], (p_hessian, p_hessian))
         self.p_tv_f = ((0, 0), (0, 0), self.p_tv[2], (p_tv, p_tv))
 
-        self.GF_pad = train_params["GF_kernel_size_train"]
+        self.GF_pad = train_params["max_pool_kernel_size"]
 
     def total_variation_kernel(self, angle_list):
         gx, gy = self.rotatableKernel(Wsize=3, sigma=1)
@@ -276,7 +275,7 @@ class Loss:
                     axis=1,
                 )
             ).sum()
-            + (2 if self.f else 1)
+            + 2
             * mask.sum()
             / mask.size
             * jnp.abs(

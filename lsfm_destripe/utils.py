@@ -212,11 +212,9 @@ def global_correction(mean, result):
 
 def destripe_train_params(
     resample_ratio: int = 3,
-    GF_kernel_size_train: int = 29,
     GF_kernel_size_inference: int = 29,
     hessian_kernel_sigma: float = 0.5,
     sampling_in_MSEloss: int = 2,
-    isotropic_hessian: bool = True,
     lambda_tv: float = 1,
     lambda_hessian: float = 1,
     inc: int = 16,
