@@ -8,7 +8,7 @@ from torch.nn import functional as F
 import jax
 import jax.numpy as jnp
 import copy
-from utils_jax import generate_mapping_coordinates
+from lsfm_destripe.utils_jax import generate_mapping_coordinates
 
 
 def crop_center(
