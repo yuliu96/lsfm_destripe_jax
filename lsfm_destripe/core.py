@@ -1,73 +1,55 @@
-import matplotlib.pyplot as plt
 import numpy as np
-from scipy import ndimage
-import torch
-import torch.fft as fft
-from torch.nn import functional as F
-import scipy
-import torch.nn as nn
-import torchvision
-import tqdm
-from typing import Union, Tuple, Optional, List, Dict
-import dask.array as da
-from aicsimageio import AICSImage
-import copy
-from jax import random
-from jax import jit
-import haiku as hk
 import jax
+from lsfm_destripe.utils_dual_view import fusion_perslice
+from typing import Union, Tuple, Optional, List, Dict
+import copy
 import jax.numpy as jnp
-from collections.abc import Iterator
-from jax import value_and_grad
 from lsfm_destripe.utils_jax import (
     transform_cmplx_haiku_model,
     initialize_cmplx_haiku_model,
     update_jax,
+    generate_upsample_matrix,
+    generate_mask_dict,
 )
-from lsfm_destripe.network import DeStripeModel
-from lsfm_destripe.guided_filter_upsample import (
-    GuidedFilterHR_fast,
-)
+import tqdm
+import dask.array as da
 from lsfm_destripe.utils import (
     prepare_aux,
     global_correction,
     destripe_train_params,
 )
-from lsfm_destripe.generate_curvature_mask import generate_mask
-from skimage.transform import resize
+import matplotlib.pyplot as plt
+from lsfm_destripe.network import DeStripeModel
+from lsfm_destripe.guided_filter_upsample import GuidedFilterHR_fast
+import dask.array as da
+from aicsimageio import AICSImage
 import tifffile
-from lsfm_destripe.utils_dual_view import fusion_perslice
 from lsfm_destripe.loss_term import Loss
+import torch
 
 
 class DeStripe:
     def __init__(
         self,
-        loss_eps: float = 10,
-        qr: float = 0.5,
         resample_ratio: int = 3,
-        GF_kernel_size_train: int = 29,
-        GF_kernel_size_inference: int = 29,
+        gf_kernel_size: int = 29,
         hessian_kernel_sigma: float = 1,
         sampling_in_MSEloss: int = 2,
-        isotropic_hessian: bool = True,
         lambda_tv: float = 1,
         lambda_hessian: float = 1,
         inc: int = 16,
+        fast_mode: bool = False,
         n_epochs: int = 300,
         wedge_degree: float = 29,
         n_neighbors: int = 16,
-        fast_GF: bool = False,
         require_global_correction: bool = True,
-        fusion_GF_kernel_size: int = 49,
-        fusion_Gaussian_kernel_size: int = 49,
+        fusion_kernel_size: int = 49,
+        backend: str = "jax",
         device: str = None,
     ):
         self.train_params = {
-            "fast_GF": fast_GF,
-            "GF_kernel_size_train": GF_kernel_size_train,
-            "GF_kernel_size_inference": GF_kernel_size_inference,
-            "loss_eps": loss_eps,
+            "fast_mode": fast_mode,
+            "gf_kernel_size": gf_kernel_size,
             "n_neighbors": n_neighbors,
             "inc": inc,
             "hessian_kernel_sigma": hessian_kernel_sigma,
@@ -75,18 +57,21 @@ class DeStripe:
             "lambda_hessian": lambda_hessian,
             "sampling_in_MSEloss": sampling_in_MSEloss,
             "resample_ratio": resample_ratio,
-            "isotropic_hessian": isotropic_hessian,
             "n_epochs": n_epochs,
             "wedge_degree": wedge_degree,
-            "qr": qr,
-            "fusion_GF_kernel_size": fusion_GF_kernel_size,
-            "fusion_Gaussian_kernel_size": fusion_Gaussian_kernel_size,
+            "fusion_kernel_size": fusion_kernel_size,
             "require_global_correction": require_global_correction,
         }
-        if device is None:
-            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        if backend == "torch":
+            if device is None:
+                self.device = torch.device(
+                    "cuda" if torch.cuda.is_available() else "cpu"
+                )
+            else:
+                self.device = device
         else:
             self.device = device
+        self.backend = backend
 
     @staticmethod
     def train_on_one_slice(
@@ -101,6 +86,7 @@ class DeStripe:
         s_: int = 1,
         z: int = 1,
         device: str = "cpu",
+        backend: str = "jax",
     ):
         rng_seq = jax.random.PRNGKey(0)
         md = (
@@ -109,179 +95,102 @@ class DeStripe:
         nd = (
             sample_params["nd"] if sample_params["is_vertical"] else sample_params["md"]
         )
+
         if sample_params["view_num"] > 1:
             assert X.shape[1] == 2, print("input X must have 2 channels.")
             assert isinstance(boundary, np.ndarray), print(
                 "dual-view fusion boundary is missing."
             )
-            boundary = jnp.array(boundary + 0.0)
-            kernel = torch.ones(
-                1,
-                1,
-                train_params["fusion_Gaussian_kernel_size"],
-                train_params["fusion_Gaussian_kernel_size"],
-            ).to(device) / (train_params["fusion_Gaussian_kernel_size"] ** 2)
-            dualtarget_numpy = fusion_perslice(
-                GuidedFilter(r=train_params["fusion_GF_kernel_size"], eps=1),
-                GuidedFilter(r=9, eps=1e-6),
-                10 ** X[:, :1, :, :],
-                10 ** X[:, 1:, :, :],
-                train_params["fusion_Gaussian_kernel_size"],
-                kernel,
-                torch.tensor(np.asarray(boundary)).to(device),
-                device=device,
+            dualtarget, fusion_mask = fusion_perslice(
+                X[:, :1, :, :],
+                X[:, 1:, :, :],
+                boundary,
+                train_params["fusion_kernel_size"],
             )
-            dualtarget = np.log10(dualtarget_numpy[None, None, :, :])
-        # mask = mask + generate_mask(mask)
-        # X, mask = jnp.array(X), jnp.array(mask)
-        # downsample
-        Xd = []
-        for ind in range(X.shape[1]):
-            Xd.append(
-                resize(
-                    X[:, ind : ind + 1, :, :],
-                    (1, 1, md, nd),
-                    order=1,
-                    anti_aliasing=False,
-                )
-            )
-        Xd = np.concatenate(Xd, 1)
+        Xd = X[:, :, :: sample_params["r"], :]
+
         if sample_params["view_num"] > 1:
-            dualtargetd = resize(
-                dualtarget,
-                (1, 1, md, nd),
-                order=1,
-                anti_aliasing=False,
+            dualtargetd, fusion_maskd = fusion_perslice(
+                Xd[:, :1, :, :],
+                Xd[:, 1:, :, :],
+                boundary / sample_params["r"],
+                (train_params["fusion_kernel_size"] // sample_params["r"]) // 2 * 2 + 1,
             )
-        mask = resize(
-            mask + 0.0,
-            (1, 1, md, nd),
-            order=1,
-            anti_aliasing=False,
-        ) + generate_mask(
-            10 ** dualtargetd if sample_params["view_num"] > 1 else 10**Xd
-        )
-        X = jnp.array(X)
-        mask = jnp.array(mask)
-        mask = (mask > 0).astype(jnp.float32)
-        Xd = jnp.array(Xd)
+
+        coor = generate_upsample_matrix(Xd, X, sample_params["r"])
+
         if sample_params["view_num"] > 1:
-            dualtarget = jnp.array(dualtarget)
-            dualtargetd = jnp.array(dualtargetd)
+            pass
+        else:
+            dualtarget = copy.deepcopy(X)
+            dualtargetd = copy.deepcopy(Xd)
+            fusion_maskd = None
+
         # to Fourier
         Xf = (
-            jnp.fft.fftshift(jnp.fft.fft2(Xd))
+            jnp.fft.fftshift(jnp.fft.fft2(Xd), axes=(-2, -1))
             .reshape(1, Xd.shape[1], -1)[0]
-            .transpose(1, 0)[: md * nd // 2, :]
+            .transpose(1, 0)[: md * nd // 2, :][..., None]
         )
+
         # initialize
+        aver = Xd.sum((2, 3))
         net_params = initialize_cmplx_haiku_model(
             network,
             rng_seq,
             {
-                "X": Xd,
+                "aver": aver,
                 "Xf": Xf,
-                "target": Xd if sample_params["view_num"] == 1 else dualtargetd,
-                "boundary": boundary,
+                "target": dualtargetd,
+                "fusion_mask": fusion_maskd,
             },
         )
+
         opt_state = update_method.opt_init(net_params)
-        smoothedTarget = GuidedFilterLoss(
-            r=train_params["GF_kernel_size_train"], eps=train_params["loss_eps"]
-        )(Xd, Xd)
+
+        mask_dict = generate_mask_dict(
+            dualtargetd,
+            boundary,
+            update_method.loss.Dx,
+            update_method.loss.Dy,
+            update_method.loss.DGaussxx,
+            update_method.loss.DGaussyy,
+            update_method.loss.p_tv,
+            update_method.loss.p_hessian,
+            train_params,
+            sample_params,
+        )
+
+        targets_f = jax.image.resize(
+            dualtargetd, (1, 1, md, nd // sample_params["r"]), method="bilinear"
+        )
+        mask_dict.update({"coor": coor})
+
         for epoch in tqdm.tqdm(
             range(train_params["n_epochs"]),
             leave=False,
             desc="for {} ({} slices in total): ".format(s_, z),
         ):
-            net_params, opt_state, Y_raw, Y_GNN, Y_LR = update_method(
+            l, net_params, opt_state, Y_raw = update_method(
                 epoch,
                 net_params,
                 opt_state,
-                Xd,
+                aver,
                 Xf,
-                boundary,
-                Xd if sample_params["view_num"] == 1 else dualtargetd,
-                smoothedTarget,
-                mask,
+                fusion_maskd,
+                dualtargetd,
+                mask_dict,
+                dualtarget,
+                targets_f,
             )
-        with torch.no_grad():
-            m, n = X.shape[-2:]
-            resultslice = np.zeros(X.shape, dtype=np.float32)
-            if not train_params["fast_GF"]:
-                for index in range(X.shape[1]):
-                    input2 = X[:, index : index + 1, :, :]
-                    input1 = jax.image.resize(
-                        Y_raw[:, index : index + 1, :, :],
-                        (1, 1, m, n),
-                        method="bilinear",
-                        antialias=False,
-                    )
-                    input1, input2 = torch.tensor(np.asarray(input1)).to(
-                        device
-                    ), torch.tensor(np.asarray(input2)).to(device)
-                    resultslice[:, index : index + 1, :, :] = (
-                        10
-                        ** GuidedFilterHRModel(
-                            input2,
-                            input1,
-                            angle_list=sample_params[
-                                "angle_offset_X{}".format(index + 1)
-                            ],
-                            r=train_params["qr"],
-                        )
-                        .cpu()
-                        .data.numpy()
-                    )
-                if X.shape[1] > 1:
-                    Y = fusion_perslice(
-                        GuidedFilter(r=train_params["fusion_GF_kernel_size"], eps=1),
-                        GuidedFilter(r=9, eps=1e-6),
-                        resultslice[:, :1, :, :],
-                        resultslice[:, 1:, :, :],
-                        train_params["fusion_Gaussian_kernel_size"],
-                        kernel,
-                        torch.tensor(np.asarray(boundary)).to(device),
-                        device=device,
-                    )
-                else:
-                    Y = resultslice[0, 0]
-            else:
-                for index in range(X.shape[1]):
-                    resultslice[:, index : index + 1, :, :] = (
-                        10
-                        ** GuidedFilterHRModel(
-                            torch.tensor(np.asarray(Xd[:, index : index + 1, :, :])).to(
-                                device
-                            ),
-                            torch.tensor(
-                                np.asarray(Y_raw[:, index : index + 1, :, :])
-                            ).to(device),
-                            torch.tensor(np.asarray(X[:, index : index + 1, :, :])).to(
-                                device
-                            ),
-                        )
-                        .cpu()
-                        .data.numpy()[0, 0]
-                    )
-                if X.shape[1] > 1:
-                    Y = fusion_perslice(
-                        GuidedFilter(r=train_params["fusion_GF_kernel_size"], eps=1),
-                        GuidedFilter(r=9, eps=1e-6),
-                        resultslice[:, :1, :, :],
-                        resultslice[:, 1:, :, :],
-                        train_params["fusion_Gaussian_kernel_size"],
-                        kernel,
-                        torch.tensor(np.asarray(boundary)).to(device),
-                        device=device,
-                    )
-                else:
-                    Y = resultslice[0, 0]
-            return (
-                Y,
-                resultslice[0] if sample_params["view_num"] > 1 else None,
-                dualtarget_numpy if sample_params["view_num"] > 1 else None,
-            )
+
+        Y = 10 ** GuidedFilterHRModel(
+            dualtargetd,
+            Y_raw,
+            coor,
+            dualtarget,
+        )
+        return Y[0, 0], 10 ** dualtarget[0, 0]
 
     @staticmethod
     def train_on_full_arr(
@@ -294,157 +203,202 @@ class DeStripe:
         boundary: np.ndarray = None,
         display: bool = False,
         device: str = "cpu",
+        non_positive: bool = False,
+        backend: str = "jax",
     ):
+        if train_params is None:
+            train_params = destripe_train_params()
+        else:
+            train_params = destripe_train_params(**train_params)
         angle_offset = angle_offset_X1 + angle_offset_X2
         angle_offset = list(set(angle_offset))
+        r = copy.deepcopy(train_params["resample_ratio"])
         sample_params = {
             "is_vertical": is_vertical,
             "angle_offset": angle_offset,
             "angle_offset_X1": angle_offset_X1,
             "angle_offset_X2": angle_offset_X2,
+            "r": r,
         }
-        if train_params is None:
-            train_params = destripe_train_params()
-        else:
-            train_params = destripe_train_params(**train_params)
         z, view_num, m, n = X.shape
         result = np.zeros((z, m, n), dtype=np.uint16)
         mean = np.zeros(z)
+        if sample_params["is_vertical"]:
+            n = n if n % 2 == 1 else n - 1
+            m = m // train_params["resample_ratio"]
+            if m % 2 == 0:
+                m = m - 1
+            m = m * train_params["resample_ratio"]
+        else:
+            m = m if m % 2 == 1 else m - 1
+            n = n // train_params["resample_ratio"]
+            if n % 2 == 0:
+                n = n - 1
+            n = n * train_params["resample_ratio"]
         sample_params["view_num"] = view_num
-        sample_params["md"], sample_params["nd"] = (
-            m // train_params["resample_ratio"] // 2 * 2 + 1,
-            n // train_params["resample_ratio"] // 2 * 2 + 1,
-        )
-        hier_mask_arr, hier_ind_arr, NI_arr = prepare_aux(
+        sample_params["m"], sample_params["n"] = m, n
+        if sample_params["is_vertical"]:
+            sample_params["md"], sample_params["nd"] = (
+                m // train_params["resample_ratio"],
+                n,
+            )
+        else:
+            sample_params["md"], sample_params["nd"] = (
+                m,
+                n // train_params["resample_ratio"],
+            )
+        hier_mask_arr, hier_ind_arr, NI_arr, NI = prepare_aux(
             sample_params["md"],
             sample_params["nd"],
+            train_params["fast_mode"],
             sample_params["is_vertical"],
-            sample_params["angle_offset"],
+            np.rad2deg(
+                np.arctan(r * np.tan(np.deg2rad(sample_params["angle_offset_X1"])))
+            ),
             train_params["wedge_degree"],
             train_params["n_neighbors"],
         )
-        train_params["NI"] = NI_arr
-        train_params["hier_mask"] = hier_mask_arr
-        train_params["hier_ind"] = hier_ind_arr
-        if sample_params["view_num"] > 1:
-            result_view1, result_view2 = np.zeros((z, m, n), dtype=np.uint16), np.zeros(
-                (z, m, n), dtype=np.uint16
-            )
-            mean_view1, mean_view2 = np.zeros(z), np.zeros(z)
-        if train_params["fast_GF"]:
-            GuidedFilterHRModel = GuidedFilterHR_fast(
-                rx=train_params["GF_kernel_size_inference"],
-                ry=0,
-                angleList=sample_params["angle_offset"],
-                eps=1e-9,
-                device=device,
-            )
-        else:
-            GuidedFilterHRModel = GuidedFilterHR(
-                rX=[
-                    train_params["GF_kernel_size_inference"] * 2 + 1,
-                    train_params["GF_kernel_size_inference"],
-                ],
-                rY=[0, 0],
-                m=(m if sample_params["is_vertical"] else n),
-                n=(n if sample_params["is_vertical"] else m),
-                device=device,
-            )
-        hier_mask, hier_ind, NI = (
-            jnp.asarray(train_params["hier_mask"]),
-            jnp.asarray(train_params["hier_ind"]),
-            jnp.asarray(train_params["NI"]),
+        print("Please check the orientation of the stripes...")
+        print(
+            "Please check the illumination orientations of the inputs (for dual inputs only)..."
         )
+        fig, ax = plt.subplots(1, 2, dpi=200)
+        if X.shape[1] > 1:
+            title = ["input with top/left illu", "input with bottom/right illu"]
+        else:
+            title = ["input"]
+            ax[1].set_visible(False)
+        for i in range(X.shape[1]):
+            demo_img = X[X.shape[0] // 2, i, :, :]
+            if not sample_params["is_vertical"]:
+                demo_img = demo_img.T
+            demo_m, demo_n = demo_img.shape
+            ax[i].imshow(demo_img)
+            for deg in sample_params["angle_offset_X{}".format(i + 1)]:
+                d = np.tan(np.deg2rad(deg)) * demo_m
+                p0 = [0 + demo_n // 2 - d // 2, d + demo_n // 2 - d // 2]
+                p1 = [0, demo_m - 1]
+                ax[i].plot(p0, p1, "r")
+            ax[i].set_title(title[i], fontsize=8, pad=1)
+            ax[i].axis("off")
+        plt.show()
+        if view_num > 1:
+            hier_mask_arr_X2, hier_ind_arr_X2, NI_arr_X2, _ = prepare_aux(
+                sample_params["md"],
+                sample_params["nd"],
+                train_params["fast_mode"],
+                sample_params["is_vertical"],
+                np.rad2deg(
+                    np.arctan(r * np.tan(np.deg2rad(sample_params["angle_offset_X2"])))
+                ),
+                train_params["wedge_degree"],
+                train_params["n_neighbors"],
+                NI,
+            )
+            hier_mask_arr = [hier_mask_arr, hier_mask_arr_X2]
+            hier_ind_arr = [hier_ind_arr, hier_ind_arr_X2]
+            NI_arr = [NI_arr, NI_arr_X2]
+
+        GuidedFilterHRModel = GuidedFilterHR_fast(
+            rx=train_params["gf_kernel_size"],
+            ry=1,
+            angleList=sample_params["angle_offset_X1"],
+        )
+
         network = transform_cmplx_haiku_model(
             model=DeStripeModel,
             inc=train_params["inc"],
-            KS=train_params["GF_kernel_size_train"],
-            m=(
+            m_l=(
                 sample_params["md"]
                 if sample_params["is_vertical"]
                 else sample_params["nd"]
             ),
-            n=(
+            n_l=(
                 sample_params["nd"]
                 if sample_params["is_vertical"]
                 else sample_params["md"]
             ),
-            resampleRatio=train_params["resample_ratio"],
             Angle=sample_params["angle_offset"],
-            NI=NI,
-            hier_mask=hier_mask,
-            hier_ind=hier_ind,
-            GFr=train_params["GF_kernel_size_train"],
+            NI=NI_arr,
+            hier_mask=hier_mask_arr,
+            hier_ind=hier_ind_arr,
             viewnum=sample_params["view_num"],
+            r=sample_params["r"],
+            Angle_X1=sample_params["angle_offset_X1"],
+            Angle_X2=sample_params["angle_offset_X2"],
+            non_positive=non_positive,
         )
-        update_method = update_jax(network, Loss(train_params, sample_params), 0.01)
-        for i in range(z):
-            Ov = np.log10(np.clip(np.asarray(X[i : i + 1]), 1, None))  # (1, v, m, n)
-            mask_slice = np.asarray(mask[i : i + 1])[None]
-            boundary_slice = (
-                boundary[None, None, i : i + 1, :] if boundary is not None else None
-            )
-            if not sample_params["is_vertical"]:
-                Ov, mask_slice = Ov.transpose(0, 1, 3, 2), mask_slice.transpose(
-                    0, 1, 3, 2
+
+        train_params.update(
+            {
+                "max_pool_kernel_size": (
+                    n // 20 * 2 + 1 if sample_params["is_vertical"] else m // 20 * 2 + 1
                 )
-            Y, resultslice, dualtarget_numpy = DeStripe.train_on_one_slice(
+            }
+        )
+
+        update_method = update_jax(network, Loss(train_params, sample_params), 0.01)
+
+        for i in range(z):
+            input = np.log10(
+                np.clip(np.asarray(X[i : i + 1])[:, :, :m, :n], 1, None)
+            )  # (1, v, m, n)
+            mask_slice = np.asarray(mask[i : i + 1, :m, :n])[None]
+            if not sample_params["is_vertical"]:
+                input = input.transpose(0, 1, 3, 2)
+                mask_slice = mask_slice.transpose(0, 1, 3, 2)
+            input = jnp.asarray(input)
+            mask_slice = jnp.asarray(mask_slice)
+            boundary_slice = (
+                jnp.asarray(
+                    boundary[
+                        None,
+                        None,
+                        i : i + 1,
+                        : n if sample_params["is_vertical"] else m,
+                    ]
+                )
+                if boundary is not None
+                else None
+            )
+            Y, dualtarget = DeStripe.train_on_one_slice(
                 network,
                 GuidedFilterHRModel,
                 update_method,
                 sample_params,
                 train_params,
-                Ov,
+                input,
                 mask_slice,
                 boundary_slice,
                 i + 1,
                 z,
                 device=device,
+                backend=backend,
             )
             if not sample_params["is_vertical"]:
                 Y = Y.T
-                if sample_params["view_num"] > 1:
-                    resultslice = resultslice.transpose(0, 2, 1)
-                    dualtarget_numpy = dualtarget_numpy.T
+                dualtarget = dualtarget.T
+            # Y = np.clip(Y, 0, 65535)
             if display:
                 plt.figure(dpi=300)
                 ax = plt.subplot(1, 2, 2)
-                plt.imshow(Y, vmin=10 ** Ov.min(), vmax=10 ** Ov.max(), cmap="gray")
+                plt.imshow(Y, vmin=Y.min(), vmax=Y.max(), cmap="gray")
                 ax.set_title("output", fontsize=8, pad=1)
                 plt.axis("off")
                 ax = plt.subplot(1, 2, 1)
-                plt.imshow(
-                    dualtarget_numpy if sample_params["view_num"] > 1 else X[i, 0],
-                    vmin=10 ** Ov.min(),
-                    vmax=10 ** Ov.max(),
-                    cmap="gray",
-                )
+                plt.imshow(dualtarget, vmin=Y.min(), vmax=Y.max(), cmap="gray")
                 ax.set_title("input", fontsize=8, pad=1)
                 plt.axis("off")
                 plt.show()
-            result[i] = np.clip(Y, 0, 65535).astype(np.uint16)
+            result[i:, : Y.shape[0], : Y.shape[1]] = np.clip(Y, 0, 65535).astype(
+                np.uint16
+            )
             mean[i] = np.mean(result[i] + 0.1)
-            if sample_params["view_num"] > 1:
-                result_view1[i] = np.clip(resultslice[:1, :, :], 0, 65535).astype(
-                    np.uint16
-                )
-                result_view2[i] = np.clip(resultslice[1:, :, :], 0, 65535).astype(
-                    np.uint16
-                )
-                mean_view1[i] = np.mean(result_view1[i] + 0.1)
-                mean_view2[i] = np.mean(result_view2[i] + 0.1)
         if train_params["require_global_correction"] and (z != 1):
             print("global correcting...")
             result = global_correction(mean, result)
-            if sample_params["view_num"] > 1:
-                result_view1, result_view2 = global_correction(
-                    mean_view1, result_view1
-                ), global_correction(mean_view2, result_view2)
         print("Done")
-        if sample_params["view_num"] == 2:
-            return result, result_view1, result_view2
-        else:
-            return result
+        return result
 
     def train(
         self,
@@ -456,6 +410,7 @@ class DeStripe:
         mask: Union[str, np.ndarray, da.core.Array] = None,
         boundary: Union[str, np.ndarray] = None,
         display: bool = False,
+        non_positive: bool = False,
     ):
         # read in X
         X1_handle = AICSImage(X1)
@@ -500,5 +455,7 @@ class DeStripe:
             boundary,
             display=display,
             device=self.device,
+            non_positive=non_positive,
+            backend=self.backend,
         )
         return out

@@ -9,6 +9,146 @@ import math
 import SimpleITK as sitk
 
 
+def generate_mask_dict(
+    dualtargetd,
+    boundary,
+    Dx,
+    Dy,
+    DGaussxx,
+    DGaussyy,
+    p_tv,
+    p_hessian,
+    train_params,
+    sample_params,
+):
+    r = train_params["max_pool_kernel_size"]
+    md, nd = dualtargetd.shape[-2:]
+    dualtargetd_pad = jnp.pad(
+        dualtargetd, ((0, 0), (0, 0), (0, 0), (r // 2, r // 2)), "reflect"
+    )
+    ind = jax.lax.conv_general_dilated_patches(
+        dualtargetd_pad, (1, r), (1, 1), "VALID"
+    ).argmax(axis=1, keepdims=True)
+    ind = ind + jnp.arange(nd)[None, None, None, :]
+    mask_tv = (
+        jnp.arctan2(
+            jnp.abs(
+                jax.lax.conv_general_dilated(
+                    jnp.pad(dualtargetd, p_tv, "reflect"), Dx, (1, 1), "VALID"
+                )
+            ),
+            jnp.abs(
+                jax.lax.conv_general_dilated(
+                    jnp.pad(dualtargetd, p_tv, "reflect"), Dy, (1, 1), "VALID"
+                )
+            ),
+        )
+        ** 12
+    )
+
+    mask_hessian = (
+        jnp.arctan2(
+            jnp.abs(
+                jax.lax.conv_general_dilated(
+                    jnp.pad(dualtargetd, p_hessian, "reflect"),
+                    DGaussxx,
+                    (1, 1),
+                    "VALID",
+                )
+            ),
+            jnp.abs(
+                jax.lax.conv_general_dilated(
+                    jnp.pad(dualtargetd, p_hessian, "reflect"),
+                    DGaussyy,
+                    (1, 1),
+                    "VALID",
+                )
+            ),
+        )
+        ** 12
+    )
+
+    if sample_params["view_num"] > 1:
+        mask_x1_f = np.isin(
+            sample_params["angle_offset"], sample_params["angle_offset_X1"]
+        )  # [:, None].repeat(5, 1).reshape(-1)
+        mask_x2_f = np.isin(
+            sample_params["angle_offset"], sample_params["angle_offset_X2"]
+        )  # [:, None].repeat(5, 1).reshape(-1)
+        mask_x1 = mask_x1_f[:, None].repeat(5, 1).reshape(-1)
+        mask_x2 = mask_x2_f[:, None].repeat(5, 1).reshape(-1)
+        mask_valid = mask_x1[None, :, None, None] * (
+            jnp.arange(md)[:, None]
+            < (boundary[:, :, :, :nd] + md * sample_params["r"] / 10)
+            / sample_params["r"]
+        ) + mask_x2[None, :, None, None] * (
+            jnp.arange(md)[:, None]
+            >= (boundary[:, :, :, :nd] - md * sample_params["r"] / 10)
+            / sample_params["r"]
+        )
+        mask_tv = mask_tv * mask_valid[:, ::5, :, :]
+        mask_hessian = mask_hessian * mask_valid
+
+    mask_tv_f = -hk.max_pool(
+        -mask_tv,
+        [1, sample_params["r"]],
+        [1, sample_params["r"]],
+        "VALID",
+        channel_axis=1,
+    )
+
+    ind_tv_f = jnp.argmax(mask_tv_f, axis=1, keepdims=True)
+    mask_tv_f = jnp.max(mask_tv_f, axis=1, keepdims=True)
+
+    ind_tv = jnp.argmax(mask_tv, axis=1, keepdims=True)
+    mask_tv = jnp.max(mask_tv, axis=1, keepdims=True)
+
+    mask_hessian_f_split = jnp.split(
+        jnp.arange(mask_hessian.shape[1]), len(sample_params["angle_offset"])
+    )
+    mask_hessian_f = []
+    for data_ind in mask_hessian_f_split:
+        mask_hessian_f.append(
+            jnp.max(mask_hessian[:, data_ind, :, :], 1, keepdims=True)
+        )
+    mask_hessian_f = jnp.concatenate(mask_hessian_f, 1)
+    mask_hessian_f = -hk.max_pool(
+        -mask_hessian_f,
+        [1, sample_params["r"]],
+        [1, sample_params["r"]],
+        "VALID",
+        channel_axis=1,
+    )
+
+    ind_hessian_f = jnp.argmax(mask_hessian_f, axis=1, keepdims=True)
+    mask_hessian_f = jnp.max(mask_hessian_f, axis=1, keepdims=True)
+
+    ind_hessian = jnp.argmax(mask_hessian, axis=1, keepdims=True)
+    mask_hessian = jnp.max(mask_hessian, axis=1, keepdims=True)
+    mask_dict = {
+        "mask_tv": mask_tv,
+        "mask_hessian": mask_hessian,
+        "mask_hessian_f": mask_hessian_f,  # jnp.where(mask_hessian_f>1, mask_hessian_f, 0),
+        "mask_tv_f": mask_tv_f,  # jnp.where(mask_tv_f>1, mask_tv_f, 0),
+        "ind": ind,
+        "ind_tv": ind_tv,
+        "ind_hessian": ind_hessian,
+        "ind_hessian_f": ind_hessian_f,
+        "ind_tv_f": ind_tv_f,
+    }
+    return mask_dict
+
+
+def generate_upsample_matrix(Xd, X, r):
+    t = jnp.linspace(0, Xd.shape[-2] - 1, (Xd.shape[-2] - 1) * r + 1)
+    t = jnp.concatenate((t, t[1:r] + t[-1]))
+
+    coor = jnp.zeros((4, X.shape[-2], X.shape[-1]))
+    coor = coor.at[2, :, :].set(t[:, None])
+    coor = coor.at[3, :, :].set(jnp.arange(X.shape[-1])[None, :])
+    return coor
+
+
 def generate_mapping_matrix(angle, m, n):
     affine = sitk.Euler2DTransform()
     affine.SetCenter([m / 2, n / 2])
