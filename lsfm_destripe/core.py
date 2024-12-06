@@ -11,7 +11,7 @@ import tqdm
 from typing import Union, Tuple, Optional, List, Dict
 import dask.array as da
 from aicsimageio import AICSImage
-
+import copy
 from jax import random
 from jax import jit
 import haiku as hk
@@ -25,10 +25,8 @@ from lsfm_destripe.utils_jax import (
     update_jax,
 )
 from lsfm_destripe.network import DeStripeModel
-from lsfm_destripe.guided_filter_variant import (
-    GuidedFilterHR,
+from lsfm_destripe.guided_filter_upsample import (
     GuidedFilterHR_fast,
-    GuidedFilter,
 )
 from lsfm_destripe.utils import (
     prepare_aux,
