@@ -224,7 +224,7 @@ def destripe_train_params(
     fusion_kernel_size: int = 49,
     require_global_correction: bool = True,
     fast_mode: bool = False,
-    fiedelity_first: bool = False,
+    fidelity_first: bool = False,
 ):
     kwargs = locals()
     return kwargs
