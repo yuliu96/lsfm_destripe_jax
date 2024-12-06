@@ -63,12 +63,7 @@ class Loss:
                 np.rad2deg(
                     np.arctan(
                         shape_params["r"]
-                        * np.tan(
-                            np.deg2rad(
-                                self.angleOffset[i]
-                                + 0.0 * np.array([-2.0, -1, 0, 1, 2])
-                            )
-                        )
+                        * np.tan(np.deg2rad(self.angleOffset[i] + 0.0))
                     )
                 )
             )
@@ -149,6 +144,12 @@ class Loss:
 
         self.GF_pad = train_params["max_pool_kernel_size"]
 
+        self.total_variation_cal = (
+            self.TotalVariationLoss
+            if len(self.angleOffset) > 1
+            else self.TotalVariationLoss_plain
+        )
+
     def total_variation_kernel(self, angle_list):
         gx, gy = self.rotatableKernel(Wsize=3, sigma=1)
         Dx_ = []
@@ -165,8 +166,6 @@ class Loss:
         Dy_ = jnp.stack(Dy_, 0)[:, None]
         Dx_ = Dx_ - Dx_.mean(axis=(-2, -1), keepdims=True)
         Dy_ = Dy_ - Dy_.mean(axis=(-2, -1), keepdims=True)
-        # Dx_ = 5*Dx_ / jnp.abs(Dx_).sum((-2, -1), keepdims = True)
-        # Dy_ = 5*Dy_ / jnp.abs(Dy_).sum((-2, -1), keepdims = True)
         return Dx_, Dy_
 
     def generateHessianKernel(self, Sigma, shape_params, angleOffset):
@@ -214,7 +213,7 @@ class Loss:
         return g.T * gp, gp.T * g
 
     @partial(jit, static_argnums=(0,))
-    def TotalVariation(self, x, target, Dx, Dy, mask, ind):
+    def TotalVariationLoss(self, x, target, Dx, Dy, mask, ind):
         return (
             jnp.abs(
                 jnp.take_along_axis(
@@ -238,6 +237,25 @@ class Loss:
                 ind,
                 axis=1,
             )
+        ).sum()
+
+    @partial(jit, static_argnums=(0,))
+    def TotalVariationLoss_plain(self, x, target, Dx, Dy, mask, ind):
+        return (
+            jnp.abs(
+                jax.lax.conv_general_dilated(
+                    jnp.pad(x, self.p_tv, "reflect"),
+                    Dx,
+                    (1, 1),
+                    "VALID",
+                    feature_group_count=x.shape[1],
+                ),
+            )
+            * mask
+        ).sum() + mask.sum() / mask.size * jnp.abs(
+            jax.lax.conv_general_dilated(
+                jnp.pad(x - target, self.p_tv, "reflect"), Dy, (1, 1), "VALID"
+            ),
         ).sum()
 
     @partial(jit, static_argnums=0)
@@ -342,7 +360,7 @@ class Loss:
             method="bilinear",
         )
 
-        tv = self.TotalVariation(
+        tv = self.total_variation_cal(
             outputGNNraw_original,
             targets,
             self.Dx,
@@ -351,7 +369,7 @@ class Loss:
             mask_dict["ind_tv"],
         )
 
-        tv = tv + self.TotalVariation(
+        tv = tv + self.total_variation_cal(
             outputGNNraw_original_f,
             targets_f,
             self.Dx_f,
