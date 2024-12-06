@@ -10,7 +10,7 @@ from functools import partial
 import scipy
 import torch.fft as fft
 import torch
-from utils import crop_center
+from lsfm_destripe.utils import crop_center
 from utils_jax import generate_mapping_coordinates
 
 
