@@ -496,7 +496,7 @@ class DeStripeModel(hk.Module):
             )
         )
 
-    def __call__(self, aver, Xf, target, boundary, target_hr):
+    def __call__(self, aver, Xf, target, boundary):
         Xf = self.p(Xf)  # (M*N, 2,)
         Xf_tvx = self.gnn(Xf)
         X_fourier = self.merge(self.tv_uint(Xf_tvx, Xf))
