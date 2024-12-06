@@ -216,7 +216,7 @@ def destripe_train_params(
     resample_ratio: int = 3,
     gf_kernel_size: int = 29,
     hessian_kernel_sigma: float = 0.5,
-    sampling_in_MSEloss: int = 2,
+    lambda_masking_mse: int = 2,
     lambda_tv: float = 1,
     lambda_hessian: float = 1,
     inc: int = 16,

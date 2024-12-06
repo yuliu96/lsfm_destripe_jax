@@ -34,7 +34,7 @@ class DeStripe:
         resample_ratio: int = 3,
         gf_kernel_size: int = 29,
         hessian_kernel_sigma: float = 1,
-        sampling_in_MSEloss: int = 2,
+        lambda_masking_mse: int = 1,
         lambda_tv: float = 1,
         lambda_hessian: float = 1,
         inc: int = 16,
@@ -56,7 +56,7 @@ class DeStripe:
             "hessian_kernel_sigma": hessian_kernel_sigma,
             "lambda_tv": lambda_tv,
             "lambda_hessian": lambda_hessian,
-            "sampling_in_MSEloss": sampling_in_MSEloss,
+            "lambda_masking_mse": lambda_masking_mse,
             "resample_ratio": resample_ratio,
             "n_epochs": n_epochs,
             "wedge_degree": wedge_degree,
@@ -170,6 +170,7 @@ class DeStripe:
         mask_dict.update(
             {
                 "coor": coor,
+                "mse_mask": mask[:, :, :: sample_params["r"], :],
             }
         )
 

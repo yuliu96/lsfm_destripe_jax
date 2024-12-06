@@ -15,6 +15,7 @@ class Loss:
         super().__init__()
         self.lambda_tv = train_params["lambda_tv"]
         self.lambda_hessian = train_params["lambda_hessian"]
+        self.lambda_masking_mse = train_params["lambda_masking_mse"]
         self.angleOffset = shape_params["angle_offset"]
 
         self.DGaussxx_f, self.DGaussyy_f, self.DGaussxy_f = [], [], []
@@ -438,6 +439,8 @@ class Loss:
                     mask_dict["ind"],
                 ]
             )
+        ) + self.lambda_masking_mse * jnp.sum(
+            jnp.abs(targets - outputGNNraw_original) * mask_dict["mse_mask"]
         )
 
         outputGNNraw_original = jnp.concatenate(
