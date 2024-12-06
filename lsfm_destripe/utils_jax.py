@@ -139,7 +139,11 @@ def generate_mask_dict(
     return mask_dict
 
 
-def generate_upsample_matrix(Xd, X, r):
+def generate_upsample_matrix(
+    Xd,
+    X,
+    r,
+):
     t = jnp.linspace(0, Xd.shape[-2] - 1, (Xd.shape[-2] - 1) * r + 1)
     t = jnp.concatenate((t, t[1:r] + t[-1]))
 
@@ -149,7 +153,11 @@ def generate_upsample_matrix(Xd, X, r):
     return coor
 
 
-def generate_mapping_matrix(angle, m, n):
+def generate_mapping_matrix(
+    angle,
+    m,
+    n,
+):
     affine = sitk.Euler2DTransform()
     affine.SetCenter([m / 2, n / 2])
     affine.SetAngle(angle / 180 * math.pi)
@@ -162,7 +170,12 @@ def generate_mapping_matrix(angle, m, n):
     return T
 
 
-def generate_mapping_coordinates(angle, m, n, reshape=True):
+def generate_mapping_coordinates(
+    angle,
+    m,
+    n,
+    reshape=True,
+):
     T = generate_mapping_matrix(angle, m, n)
     id = np.array([[0, 0], [0, n], [m, 0], [m, n]]).T
     if reshape:
@@ -191,7 +204,12 @@ def generate_mapping_coordinates(angle, m, n, reshape=True):
 
 
 @optimizers.optimizer
-def cADAM(step_size, b1=0.9, b2=0.999, eps=1e-8):
+def cADAM(
+    step_size,
+    b1=0.9,
+    b2=0.999,
+    eps=1e-8,
+):
     step_size = optimizers.make_schedule(step_size)
 
     def init(x0):
@@ -213,7 +231,10 @@ def cADAM(step_size, b1=0.9, b2=0.999, eps=1e-8):
     return init, update, get_params
 
 
-def transform_cmplx_haiku_model(model, **model_kwargs):
+def transform_cmplx_haiku_model(
+    model,
+    **model_kwargs,
+):
     def forward_pass(**x):
         net = model(**model_kwargs)
         return net(**x)
@@ -222,13 +243,22 @@ def transform_cmplx_haiku_model(model, **model_kwargs):
     return network
 
 
-def initialize_cmplx_haiku_model(network, key, dummy_input):
+def initialize_cmplx_haiku_model(
+    network,
+    key,
+    dummy_input,
+):
     net_params = network.init(key, **dummy_input)
     return net_params
 
 
 class update_jax:
-    def __init__(self, network, Loss, learning_rate):
+    def __init__(
+        self,
+        network,
+        Loss,
+        learning_rate,
+    ):
         self.opt_init, self.opt_update, self.get_params = cADAM(learning_rate)
         self.loss = Loss
         self._network = network

@@ -87,7 +87,6 @@ class DeStripe:
         boundary: np.ndarray = None,
         s_: int = 1,
         z: int = 1,
-        device: str = "cpu",
         backend: str = "jax",
     ):
         rng_seq = jax.random.PRNGKey(0)
@@ -164,7 +163,9 @@ class DeStripe:
         )
 
         targets_f = jax.image.resize(
-            dualtargetd, (1, 1, md, nd // sample_params["r"]), method="bilinear"
+            dualtargetd,
+            (1, 1, md, nd // sample_params["r"]),
+            method="bilinear",
         )
         mask_dict.update(
             {
@@ -379,7 +380,6 @@ class DeStripe:
                 boundary_slice,
                 i + 1,
                 z,
-                device=device,
                 backend=backend,
             )
             if not sample_params["is_vertical"]:

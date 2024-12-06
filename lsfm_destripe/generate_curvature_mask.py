@@ -11,7 +11,12 @@ from skimage import measure
 import skimage
 
 
-def compute_curvature(point, i, contour, window_size):
+def compute_curvature(
+    point,
+    i,
+    contour,
+    window_size,
+):
     # Compute the curvature using polynomial fitting in a local coordinate system
 
     # Extract neighboring edge points

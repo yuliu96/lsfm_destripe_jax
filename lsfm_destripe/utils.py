@@ -1,6 +1,5 @@
 from typing import List
 import numpy as np
-from scipy.ndimage import rotate
 import math
 import scipy
 import jax
@@ -202,7 +201,10 @@ def prepare_aux(
     return hier_mask, hier_ind, NI, NI_all
 
 
-def global_correction(mean, result):
+def global_correction(
+    mean,
+    result,
+):
     means = scipy.signal.savgol_filter(mean, min(21, len(mean)), 1)
     MIN, MAX = result.min(), result.max()
     result = result - mean[:, None, None] + means[:, None, None]

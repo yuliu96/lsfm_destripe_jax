@@ -5,21 +5,32 @@ class BoxFilter_3d:
     def __init__(self, r):
         self.r = r
 
-    def diff_x(self, input, r):
+    def diff_x(
+        self,
+        input,
+        r,
+    ):
         left = input[:, :, r : 2 * r + 1]
         middle = input[:, :, 2 * r + 1 :] - input[:, :, : -2 * r - 1]
         right = input[:, :, -1:] - input[:, :, -2 * r - 1 : -r - 1]
         output = jnp.concatenate([left, middle, right], 2)
         return output
 
-    def diff_y(self, input, r):
+    def diff_y(
+        self,
+        input,
+        r,
+    ):
         left = input[:, :, :, r : 2 * r + 1]
         middle = input[:, :, :, 2 * r + 1 :] - input[:, :, :, : -2 * r - 1]
         right = input[:, :, :, -1:] - input[:, :, :, -2 * r - 1 : -r - 1]
         output = jnp.concatenate([left, middle, right], 3)
         return output
 
-    def __call__(self, x):
+    def __call__(
+        self,
+        x,
+    ):
         return self.diff_y(
             self.diff_x(x.sum(1, keepdims=True).cumsum(2), self.r[1]).cumsum(3),
             self.r[1],
@@ -27,7 +38,11 @@ class BoxFilter_3d:
 
 
 class GuidedFilter:
-    def __init__(self, r, eps=1e-8):
+    def __init__(
+        self,
+        r,
+        eps=1e-8,
+    ):
         if isinstance(r, list):
             self.r = r
         else:
@@ -35,7 +50,11 @@ class GuidedFilter:
         self.eps = eps
         self.boxfilter = BoxFilter_3d(r)
 
-    def __call__(self, x, y):
+    def __call__(
+        self,
+        x,
+        y,
+    ):
         mean_y_tmp = self.boxfilter(y)
         x, y = 0.001 * x, 0.001 * y
         n_x, c_x, h_x, w_x = x.shape

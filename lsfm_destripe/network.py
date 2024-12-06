@@ -271,7 +271,11 @@ class tv_uint_dual(hk.Module):
             latentProcess[1],
         )
 
-    def __call__(self, Xf_tvx, Xf):
+    def __call__(
+        self,
+        Xf_tvx,
+        Xf,
+    ):
         X_fourier0 = self.tv_uint0(Xf_tvx[0], Xf[:, 0:1, :])
         X_fourier1 = self.tv_uint1(Xf_tvx[1], Xf[:, 1:2, :])
         return jnp.concatenate((X_fourier0, X_fourier1), -2)
@@ -471,17 +475,31 @@ class DeStripeModel(hk.Module):
             non_positive_unit() if non_positive else identical_func()
         )
 
-    def fftnt(self, x, row, col):
+    def fftnt(
+        self,
+        x,
+        row,
+        col,
+    ):
         y = x.reshape(-1)[: col * row // 2][None, :, None]
         self.TVfftx.append(y)
         self.inverseTVfftx.append(jnp.conj(y))
 
-    def fftn(self, x, row, col):
+    def fftn(
+        self,
+        x,
+        row,
+        col,
+    ):
         y = x.reshape(-1)[: col * row // 2][None, :, None]
         self.TVffty.append(y)
         self.inverseTVffty.append(jnp.conj(y))
 
-    def fourierResult(self, z, aver):
+    def fourierResult(
+        self,
+        z,
+        aver,
+    ):
         return jnp.abs(
             jnp.fft.ifft2(
                 jnp.fft.ifftshift(
@@ -496,7 +514,13 @@ class DeStripeModel(hk.Module):
             )
         )
 
-    def __call__(self, aver, Xf, target, fusion_mask):
+    def __call__(
+        self,
+        aver,
+        Xf,
+        target,
+        fusion_mask,
+    ):
         Xf = self.p(Xf)  # (M*N, 2,)
         Xf_tvx = self.gnn(Xf)
         X_fourier = self.merge(self.tv_uint(Xf_tvx, Xf))

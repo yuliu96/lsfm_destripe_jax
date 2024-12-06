@@ -158,7 +158,10 @@ class Loss:
             else self.HessianRegularizationLoss_plain
         )
 
-    def total_variation_kernel(self, angle_list):
+    def total_variation_kernel(
+        self,
+        angle_list,
+    ):
         gx, gy = self.rotatableKernel(Wsize=3, sigma=1)
         Dx_ = []
         Dy_ = []
@@ -176,7 +179,12 @@ class Loss:
         Dy_ = Dy_ - Dy_.mean(axis=(-2, -1), keepdims=True)
         return Dx_, Dy_
 
-    def generateHessianKernel(self, Sigma, shape_params, angleOffset):
+    def generateHessianKernel(
+        self,
+        Sigma,
+        shape_params,
+        angleOffset,
+    ):
         Wsize = math.ceil(3 * Sigma)
         KernelSize = 2 * (2 * Wsize + 1) - 1
         gx, gy = self.rotatableKernel(Wsize, Sigma)
@@ -214,14 +222,26 @@ class Loss:
         DGaussyy = DGaussyy - DGaussyy.mean(axis=(-2, -1), keepdims=True)
         return DGaussxx, DGaussyy, DGaussxy
 
-    def rotatableKernel(self, Wsize, sigma):
+    def rotatableKernel(
+        self,
+        Wsize,
+        sigma,
+    ):
         k = jnp.linspace(-Wsize, Wsize, 2 * Wsize + 1)[None, :]
         g = jnp.exp(-(k**2) / (2 * sigma**2))
         gp = -(k / sigma) * jnp.exp(-(k**2) / (2 * sigma**2))
         return g.T * gp, gp.T * g
 
     @partial(jit, static_argnums=(0,))
-    def TotalVariationLoss(self, x, target, Dx, Dy, mask, ind):
+    def TotalVariationLoss(
+        self,
+        x,
+        target,
+        Dx,
+        Dy,
+        mask,
+        ind,
+    ):
         return (
             jnp.abs(
                 jnp.take_along_axis(
@@ -248,7 +268,15 @@ class Loss:
         ).sum()
 
     @partial(jit, static_argnums=(0,))
-    def TotalVariationLoss_plain(self, x, target, Dx, Dy, mask, ind):
+    def TotalVariationLoss_plain(
+        self,
+        x,
+        target,
+        Dx,
+        Dy,
+        mask,
+        ind,
+    ):
         return (
             jnp.abs(
                 jax.lax.conv_general_dilated(
@@ -268,7 +296,14 @@ class Loss:
 
     @partial(jit, static_argnums=0)
     def HessianRegularizationLoss(
-        self, x, target, DGaussxx, DGaussyy, DGaussxy, mask, ind
+        self,
+        x,
+        target,
+        DGaussxx,
+        DGaussyy,
+        DGaussxy,
+        mask,
+        ind,
     ):
         return (
             (
@@ -320,7 +355,14 @@ class Loss:
 
     @partial(jit, static_argnums=0)
     def HessianRegularizationLoss_plain(
-        self, x, target, DGaussxx, DGaussyy, DGaussxy, mask, ind
+        self,
+        x,
+        target,
+        DGaussxx,
+        DGaussyy,
+        DGaussxy,
+        mask,
+        ind,
     ):
         return (
             (
