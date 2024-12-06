@@ -212,7 +212,7 @@ def global_correction(mean, result):
 
 def destripe_train_params(
     resample_ratio: int = 3,
-    GF_kernel_size_inference: int = 29,
+    gf_kernel_size: int = 29,
     hessian_kernel_sigma: float = 0.5,
     sampling_in_MSEloss: int = 2,
     lambda_tv: float = 1,
@@ -221,8 +221,7 @@ def destripe_train_params(
     n_epochs: int = 300,
     wedge_degree: float = 29,
     n_neighbors: int = 16,
-    fusion_GF_kernel_size: int = 49,
-    fusion_Gaussian_kernel_size: int = 49,
+    fusion_kernel_size: int = 49,
     require_global_correction: bool = True,
     fast_mode: bool = False,
 ):
