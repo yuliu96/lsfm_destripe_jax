@@ -60,12 +60,14 @@ class Loss:
         for i in range(len(self.angleOffset)):
             Dx_f, Dy_f = self.total_variation_kernel([self.angleOffset[i] + 0.0])
             Dx, Dy = self.total_variation_kernel(
-                np.rad2deg(
-                    np.arctan(
-                        shape_params["r"]
-                        * np.tan(np.deg2rad(self.angleOffset[i] + 0.0))
+                [
+                    np.rad2deg(
+                        np.arctan(
+                            shape_params["r"]
+                            * np.tan(np.deg2rad(self.angleOffset[i] + 0.0))
+                        )
                     )
-                )
+                ]
             )
             self.Dx_f.append(Dx_f)
             self.Dy_f.append(Dy_f)
