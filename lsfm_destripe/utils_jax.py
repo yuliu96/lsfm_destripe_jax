@@ -113,7 +113,7 @@ class update_jax:
             {
                 "aver": aver,
                 "Xf": xf,
-                "boundary": boundary,
+                "fusion_mask": boundary,
                 "target": y,
             },
             y,
