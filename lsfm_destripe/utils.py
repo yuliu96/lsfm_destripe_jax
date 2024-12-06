@@ -5,55 +5,28 @@ import math
 import scipy
 import torch
 from torch.nn import functional as F
+import jax
+import jax.numpy as jnp
+import copy
+from utils_jax import generate_mapping_coordinates
 
 
-def fusion_perslice(
-    GFbase, GFdetail, topSlice, bottomSlice, Gaussianr, kernel, boundary, device
+def crop_center(
+    img,
+    cropy,
+    cropx,
 ):
-    topSlice = torch.from_numpy(topSlice).to(device)
-    bottomSlice = torch.from_numpy(bottomSlice).to(device)
-    topBase = torch.conv2d(
-        F.pad(
-            topSlice,
-            (Gaussianr // 2, Gaussianr // 2, Gaussianr // 2, Gaussianr // 2),
-            "reflect",
-        ),
-        kernel,
-    )
-    bottomBase = torch.conv2d(
-        F.pad(
-            bottomSlice,
-            (Gaussianr // 2, Gaussianr // 2, Gaussianr // 2, Gaussianr // 2),
-            "reflect",
-        ),
-        kernel,
-    )
-    topDetail, bottomDetail = topSlice - topBase, bottomSlice - bottomBase
-    mask = torch.arange(topSlice.shape[2], device=device)[None, None, :, None]
-    mask0, mask1 = (mask > boundary).to(torch.float), (mask <= boundary).to(torch.float)
-    result0base, result1base = GFbase(bottomBase, mask0), GFbase(topBase, mask1)
-    result0detail, result1detail = GFdetail(bottomDetail, mask0), GFdetail(
-        topDetail, mask1
-    )
-    t = result0base + result1base + 1e-3
-    result0base, result1base = result0base / t, result1base / t
-    t = result0detail + result1detail + 1e-3
-    result0detail, result1detail = result0detail / t, result1detail / t
-    minn, maxx = min(topSlice.min(), bottomSlice.min()), max(
-        topSlice.max(), bottomSlice.max()
-    )
-    result = torch.clip(
-        result0base * bottomBase
-        + result1base * topBase
-        + result0detail * bottomDetail
-        + result1detail * topDetail,
-        minn,
-        maxx,
-    )
-    return result.squeeze().cpu().data.numpy().astype(np.uint16)
+    y, x = img.shape
+    startx = x // 2 - cropx // 2
+    starty = y // 2 - cropy // 2
+    return img[starty : starty + cropy, startx : startx + cropx]
 
 
-def NeighborSampling(m, n, k_neighbor=16):
+def NeighborSampling(
+    m,
+    n,
+    k_neighbor=16,
+):
     """
     Do neighbor sampling
 
@@ -66,57 +39,86 @@ def NeighborSampling(m, n, k_neighbor=16):
     k_neigher: int, data range [1, 32], 16 by default
         number of neighboring points
     """
-    NI = np.zeros((m * n, k_neighbor))
-    grid_x, grid_y = np.meshgrid(
-        np.linspace(1, m, m), np.linspace(1, n, n), indexing="ij"
+    width = 11
+    NI = jnp.zeros((m * n, k_neighbor), dtype=jnp.int32)
+    key = jax.random.key(0)
+    grid_x, grid_y = jnp.meshgrid(
+        jnp.linspace(1, m, m), jnp.linspace(1, n, n), indexing="ij"
     )
     grid_x, grid_y = grid_x - math.floor(m / 2) - 1, grid_y - math.floor(n / 2) - 1
     grid_x, grid_y = grid_x.reshape(-1) ** 2, grid_y.reshape(-1) ** 2
-    ring_radius, index = 0, 0
-    while 1:
-        if ring_radius != 0:
-            Norms1 = grid_y / (ring_radius**2) + grid_x / ((ring_radius / n * m) ** 2)
-        ring_radius = ring_radius + 5
-        Norms2 = grid_y / (ring_radius**2) + grid_x / ((ring_radius / n * m) ** 2)
-        if ring_radius == 5:
-            ind = np.setdiff1d(np.where(Norms2 <= 1)[0], np.where(Norms2 == 0)[0])
-        elif np.where(Norms2 > 1)[0].shape[0] == 0:
-            ind = np.where(Norms1 > 1)[0]
-        else:
-            ind = np.setdiff1d(np.where(Norms2 <= 1)[0], np.where(Norms1 <= 1)[0])
-        indc = np.random.randint(len(ind), size=len(ind) * k_neighbor)
-        NI[ind, :] = ind[indc].reshape(-1, k_neighbor)
-        index = index + 1
-        if np.where(Norms2 > 1)[0].shape[0] == 0:
-            zero_freq = (m * n) // 2
-            NI = NI[:zero_freq, :]
-            NI[NI > zero_freq] = 2 * zero_freq - NI[NI > zero_freq]
-            return np.concatenate(
-                (np.linspace(0, NI.shape[0] - 1, NI.shape[0])[:, np.newaxis], NI),
-                axis=1,
-            ).astype(np.int32)
+
+    iter_num = jnp.sqrt((grid_x + grid_y).max()) // width + 1
+
+    mask_outer = (grid_x + grid_y) < (width * jnp.arange(1, iter_num + 1)[:, None]) ** 2
+    mask_inner = (grid_x + grid_y) >= (width * jnp.arange(0, iter_num)[:, None]) ** 2
+    mask = mask_outer * mask_inner
+    ind = jnp.where(mask)
+    _, counts = jnp.unique(ind[0], return_counts=True)
+    counts_cumsum = jnp.cumsum(counts)
+
+    low = jnp.concatenate(
+        (jnp.array([0]), counts_cumsum[:-1]),
+    )
+
+    low = low.repeat(counts)
+    high = counts_cumsum
+    high = high.repeat(counts)
+    indc = jax.random.randint(key, (k_neighbor, len(low)), low, high).T
+    NI = NI.at[ind[1]].set(ind[1][indc])
+    zero_freq = (m * n) // 2
+    NI = NI[:zero_freq, :]
+    NI = NI.at[NI > zero_freq].set(2 * zero_freq - NI[NI > zero_freq])
+    return jnp.concatenate(
+        (jnp.linspace(0, NI.shape[0] - 1, NI.shape[0])[:, jnp.newaxis], NI),
+        axis=1,
+    ).astype(jnp.int32)
 
 
 def WedgeMask(md, nd, Angle, deg):
     """
     Add docstring here
     """
-    Xv, Yv = np.meshgrid(np.linspace(0, nd, nd + 1), np.linspace(0, md, md + 1))
-    tmp = np.arctan2(Xv, Yv)
-    tmp = np.hstack((np.flip(tmp[:, 1:], 1), tmp))
-    tmp = np.vstack((np.flip(tmp[1:, :], 0), tmp))
+    md_o, nd_o = copy.deepcopy(md), copy.deepcopy(nd)
+    md = max(md_o, nd_o)
+    nd = max(md_o, nd_o)
+
+    Xv, Yv = jnp.meshgrid(jnp.linspace(0, nd, nd + 1), jnp.linspace(0, md, md + 1))
+    tmp = jnp.arctan2(Xv, Yv)
+    tmp = jnp.hstack((jnp.flip(tmp[:, 1:], 1), tmp))
+    tmp = jnp.vstack((jnp.flip(tmp[1:, :], 0), tmp))
     if Angle != 0:
-        tmp = rotate(tmp, Angle, reshape=False)
-    a = tmp[md - md // 2 : md + md // 2 + 1, nd - nd // 2 : nd + nd // 2 + 1]
+        rotate_mask = generate_mapping_coordinates(
+            -Angle,
+            tmp.shape[0],
+            tmp.shape[1],
+            False,
+        )
+        tmp = jax.scipy.ndimage.map_coordinates(
+            tmp[None, None],
+            rotate_mask,
+            0,
+            mode="nearest",
+        )[0, 0]
+
+    a = crop_center(tmp, md, nd)
+
     tmp = Xv**2 + Yv**2
-    tmp = np.hstack((np.flip(tmp[:, 1:], 1), tmp))
-    tmp = np.vstack((np.flip(tmp[1:, :], 0), tmp))
-    if Angle != 0:
-        tmp = rotate(tmp, Angle, reshape=False)
+    tmp = jnp.hstack((jnp.flip(tmp[:, 1:], 1), tmp))
+    tmp = jnp.vstack((jnp.flip(tmp[1:, :], 0), tmp))
     b = tmp[md - md // 2 : md + md // 2 + 1, nd - nd // 2 : nd + nd // 2 + 1]
-    return (
-        (a <= math.pi / 180 * (90 - deg)).astype(np.int32) * (b > 18).astype(np.int32)
-    ) != 0
+    b = (
+        jnp.abs(jnp.arange(nd) - nd // 2)[None, :] > nd // 4 * jnp.ones(md)[:, None]
+    ).astype(jnp.int32)
+    return crop_center(
+        (
+            ((a < math.pi / 180 * (90 - deg)).astype(jnp.int32) + b)
+            * (b > 1024).astype(jnp.int32)
+        )
+        != 0,
+        md_o,
+        nd_o,
+    )
 
 
 def prepare_aux(
@@ -126,6 +128,7 @@ def prepare_aux(
     angleOffset: List[float] = None,
     deg: float = 0,
     Nneighbors: int = 16,
+    NI_all=None,
 ):
     """
     the function preparing auxillary variables for training based on image shape
@@ -156,21 +159,25 @@ def prepare_aux(
     """
     if not is_vertical:
         (nd, md) = (md, nd)
-    angleMask = np.stack(
-        [WedgeMask(md, nd, Angle=angle, deg=deg) for angle in angleOffset], 0
-    )
+
+    angleMask = jnp.ones((md, nd), dtype=np.int32)
+    for angle in angleOffset:
+        angleMask = angleMask * WedgeMask(md, nd, Angle=angle, deg=deg)
+    angleMask = angleMask[None]
     angleMask = angleMask.reshape(angleMask.shape[0], -1)[:, : md * nd // 2]
-    hier_mask = np.where(angleMask == 1)[1]
-    hier_ind = np.argsort(
-        np.concatenate(
-            [np.where(angleMask.reshape(-1) == index)[0] for index in range(2)]
+    hier_mask = jnp.where(angleMask == 1)[1]  ##(3, N)
+
+    hier_ind = jnp.argsort(
+        jnp.concatenate(
+            [jnp.where(angleMask.reshape(-1) == index)[0] for index in range(2)]
         )
     )
-    NI = NeighborSampling(md, nd, k_neighbor=Nneighbors)
-    NI = np.concatenate(
-        [NI[hier_mask == 0, 1 : Nneighbors + 1].T for hier_mask in angleMask], 1
-    )
-    return hier_mask, hier_ind, NI
+    if NI_all is None:
+        NI_all = NeighborSampling(md, nd, k_neighbor=Nneighbors)
+    NI = jnp.concatenate(
+        [NI_all[angle_mask == 0, :].T for angle_mask in angleMask], 1
+    )  # 1 : Nneighbors + 1
+    return hier_mask, hier_ind, NI, NI_all
 
 
 def global_correction(mean, result):

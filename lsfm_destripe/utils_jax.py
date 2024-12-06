@@ -5,6 +5,49 @@ import jax
 from jax.example_libraries import optimizers
 from functools import partial
 from jax import jit, value_and_grad
+import math
+import SimpleITK as sitk
+
+
+def generate_mapping_matrix(angle, m, n):
+    affine = sitk.Euler2DTransform()
+    affine.SetCenter([m / 2, n / 2])
+    affine.SetAngle(angle / 180 * math.pi)
+    A = np.array(affine.GetMatrix()).reshape(2, 2)
+    c = np.array(affine.GetCenter())
+    t = np.array(affine.GetTranslation())
+    T = np.eye(3, dtype=np.float32)
+    T[0:2, 0:2] = A
+    T[0:2, 2] = -np.dot(A, c) + t + c
+    return T
+
+
+def generate_mapping_coordinates(angle, m, n, reshape=True):
+    T = generate_mapping_matrix(angle, m, n)
+    id = np.array([[0, 0], [0, n], [m, 0], [m, n]]).T
+    if reshape:
+        out_bounds = T[:2, :2] @ id
+        out_plane_shape = (np.ptp(out_bounds, axis=1) + 0.5).astype(int)
+    else:
+        out_plane_shape = np.array([m, n])
+
+    out_center = T[:2, :2] @ ((out_plane_shape - 1) / 2)
+    in_center = (np.array([m, n]) - 1) / 2
+    offset = in_center - out_center
+    xx, yy = jnp.meshgrid(
+        jnp.linspace(0, out_plane_shape[0] - 1, out_plane_shape[0]),
+        jnp.linspace(0, out_plane_shape[1] - 1, out_plane_shape[1]),
+    )
+    T = jnp.array(T)
+    z = (
+        jnp.dot(T[:2, :2], jnp.stack((xx, yy)).reshape(2, -1)).reshape(
+            2, out_plane_shape[1], out_plane_shape[0]
+        )
+        + offset[:, None, None]
+    )
+    z = z.transpose(0, 2, 1)
+    z = jnp.concatenate((jnp.zeros_like(z), z))[:, None, None]
+    return z
 
 
 @optimizers.optimizer
@@ -56,23 +99,29 @@ class update_jax:
         step,
         params,
         opt_state,
-        x,
+        aver,
         xf,
         boundary,
         y,
-        smoothedTarget,
-        map,
+        mask_dict,
         hy,
+        targets_f,
     ):
-        (l, (A, B, C)), grads = value_and_grad(self.loss, has_aux=True)(
+        (l, A), grads = value_and_grad(self.loss, has_aux=True)(
             params,
             self._network,
-            {"X": x, "Xf": xf, "boundary": boundary, "target": y},
+            {
+                "aver": aver,
+                "Xf": xf,
+                "boundary": boundary,
+                "target": y,
+                "target_hr": hy,
+            },
             y,
-            smoothedTarget,
-            map,
+            mask_dict,
             hy,
+            targets_f,
         )
-        grads = jax.tree_map(jnp.conjugate, grads)
+        grads = jax.tree_util.tree_map(jnp.conjugate, grads)
         opt_state = self.opt_update(step, grads, opt_state)
-        return self.get_params(opt_state), opt_state, A, B, C
+        return l, self.get_params(opt_state), opt_state, A

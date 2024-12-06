@@ -47,6 +47,8 @@ requirements = [
     "tqdm",
     "matplotlib",
     "dm-haiku",
+    "SimpleITK",
+    "jaxwt",
 ]
 
 extra_requirements = {

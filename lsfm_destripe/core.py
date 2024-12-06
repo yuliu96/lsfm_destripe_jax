@@ -24,7 +24,7 @@ from lsfm_destripe.utils_jax import (
     initialize_cmplx_haiku_model,
     update_jax,
 )
-from lsfm_destripe.network import DeStripeModel, Loss, GuidedFilterLoss
+from lsfm_destripe.network import DeStripeModel
 from lsfm_destripe.guided_filter_variant import (
     GuidedFilterHR,
     GuidedFilterHR_fast,
@@ -33,12 +33,13 @@ from lsfm_destripe.guided_filter_variant import (
 from lsfm_destripe.utils import (
     prepare_aux,
     global_correction,
-    fusion_perslice,
     destripe_train_params,
 )
 from lsfm_destripe.generate_curvature_mask import generate_mask
 from skimage.transform import resize
 import tifffile
+from lsfm_destripe.utils_dual_view import fusion_perslice
+from lsfm_destripe.loss_term import Loss
 
 
 class DeStripe:
