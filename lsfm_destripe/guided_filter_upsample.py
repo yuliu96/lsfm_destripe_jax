@@ -4,7 +4,7 @@ import copy
 import jax
 import numpy as np
 import scipy
-from utils import crop_center
+from lsfm_destripe.utils import crop_center
 
 
 def wave_rec(
