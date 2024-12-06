@@ -82,17 +82,17 @@ class Loss:
         self.DGaussxy = (
             self.DGaussxy
             / jnp.abs(self.DGaussxy).sum(axis=(-2, -1), keepdims=True)
-            * jnp.abs(self.Dx).sum(axis=(-2, -1), keepdims=True)
+            * jnp.abs(self.Dx.repeat(5, 0)).sum(axis=(-2, -1), keepdims=True)
         )
         self.DGaussyy = (
             self.DGaussyy
             / jnp.abs(self.DGaussyy).sum(axis=(-2, -1), keepdims=True)
-            * jnp.abs(self.Dx).sum(axis=(-2, -1), keepdims=True)
+            * jnp.abs(self.Dx.repeat(5, 0)).sum(axis=(-2, -1), keepdims=True)
         )
         self.DGaussxx = (
             self.DGaussxx
             / jnp.abs(self.DGaussxx).sum(axis=(-2, -1), keepdims=True)
-            * jnp.abs(self.Dx).sum(axis=(-2, -1), keepdims=True)
+            * jnp.abs(self.Dx.repeat(5, 0)).sum(axis=(-2, -1), keepdims=True)
         )
 
         self.DGaussxy_f = (
