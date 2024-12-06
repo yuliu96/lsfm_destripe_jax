@@ -11,7 +11,7 @@ import scipy
 import torch.fft as fft
 import torch
 from lsfm_destripe.utils import crop_center
-from utils_jax import generate_mapping_coordinates
+from lsfm_destripe.utils_jax import generate_mapping_coordinates
 
 
 class Cmplx_Xavier_Init(hk.initializers.Initializer):
