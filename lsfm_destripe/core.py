@@ -44,6 +44,7 @@ class DeStripe:
         n_neighbors: int = 16,
         require_global_correction: bool = True,
         fusion_kernel_size: int = 49,
+        fidelity_first: bool = False,
         backend: str = "jax",
         device: str = None,
     ):
@@ -61,6 +62,7 @@ class DeStripe:
             "wedge_degree": wedge_degree,
             "fusion_kernel_size": fusion_kernel_size,
             "require_global_correction": require_global_correction,
+            "fidelity_first": fidelity_first,
         }
         if backend == "torch":
             if device is None:
@@ -164,7 +166,11 @@ class DeStripe:
         targets_f = jax.image.resize(
             dualtargetd, (1, 1, md, nd // sample_params["r"]), method="bilinear"
         )
-        mask_dict.update({"coor": coor})
+        mask_dict.update(
+            {
+                "coor": coor,
+            }
+        )
 
         for epoch in tqdm.tqdm(
             range(train_params["n_epochs"]),
@@ -189,6 +195,7 @@ class DeStripe:
             Y_raw,
             coor,
             dualtarget,
+            train_params["fidelity_first"],
         )
         return Y[0, 0], 10 ** dualtarget[0, 0]
 

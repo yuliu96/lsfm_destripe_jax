@@ -93,7 +93,7 @@ class GuidedFilterHR_fast:
         self.ry = ry
         self.angleList = angleList
 
-    def __call__(self, xx, yy, coor, hX, fiedelity_first):
+    def __call__(self, xx, yy, coor, hX, fidelity_first):
         hXX = copy.deepcopy(hX)
         hX = jax.scipy.ndimage.map_coordinates(
             xx,
@@ -125,7 +125,7 @@ class GuidedFilterHR_fast:
             hX,
             recon,
             hXX,
-            fiedelity_first,
+            fidelity_first,
         )
         return recon
 
@@ -134,7 +134,7 @@ class GuidedFilterHR_fast:
         xx,
         yy,
         hX,
-        fiedelity_first,
+        fidelity_first,
     ):
         _, _, m, n = hX.shape
         for i, Angle in enumerate((-1 * np.array(self.angleList)).tolist()):
@@ -201,18 +201,18 @@ class GuidedFilterHR_fast:
                 1,
             )
             x_1 = wave_rec(
-                x_1 if fiedelity_first else y_1,
+                x_1 if fidelity_first else y_1,
                 x_1 + b,
-                x_1 + b if fiedelity_first else y_1,
+                x_1 + b if fidelity_first else y_1,
                 "db8",
-                False if fiedelity_first else True,
+                False if fidelity_first else True,
             )
             hx_1 = wave_rec(
-                hx_1 if fiedelity_first else y_1,
+                hx_1 if fidelity_first else y_1,
                 hx_1 + b,
-                hx_1 + b if fiedelity_first else y_1,
+                hx_1 + b if fidelity_first else y_1,
                 "db8",
-                False if fiedelity_first else True,
+                False if fidelity_first else True,
             )
             xx = crop_center(
                 scipy.ndimage.rotate(
