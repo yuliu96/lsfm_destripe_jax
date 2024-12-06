@@ -70,11 +70,10 @@ def fusion_perslice(topSlice, bottomSlice, boundary, GFr):
     num0 = num0 == (2 * GFr[1] + 1) * (2 * GFr[1] + 1) * GFr[0]
     num1 = num1 == (2 * GFr[1] + 1) * (2 * GFr[1] + 1) * GFr[0]
 
-    result0[num0] = 1
-    result1[num1] = 1
-
-    result0[num1] = 0
-    result1[num0] = 0
+    result0 = result0.at[num0].set(1)
+    result1 = result1.at[num1].set(1)
+    result0 = result0.at[num1].set(0)
+    result1 = result1.at[num0].set(0)
 
     t = result0 + result1
 

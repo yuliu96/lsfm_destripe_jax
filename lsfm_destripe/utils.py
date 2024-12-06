@@ -73,7 +73,13 @@ def NeighborSampling(
     ).astype(jnp.int32)
 
 
-def WedgeMask(md, nd, Angle, deg):
+def WedgeMask(
+    md,
+    nd,
+    Angle,
+    deg,
+    fast_mode,
+):
     """
     Add docstring here
     """
@@ -108,23 +114,35 @@ def WedgeMask(md, nd, Angle, deg):
     b = (
         jnp.abs(jnp.arange(nd) - nd // 2)[None, :] > nd // 4 * jnp.ones(md)[:, None]
     ).astype(jnp.int32)
-    return crop_center(
-        (
-            ((a < math.pi / 180 * (90 - deg)).astype(jnp.int32) + b)
-            * (b > 1024).astype(jnp.int32)
+    if fast_mode:
+        return crop_center(
+            (
+                ((a < math.pi / 180 * (90 - deg)).astype(jnp.int32) + b)
+                * (b > 1024).astype(jnp.int32)
+            )
+            != 0,
+            md_o,
+            nd_o,
         )
-        != 0,
-        md_o,
-        nd_o,
-    )
+    else:
+        return crop_center(
+            (
+                ((a < math.pi / 180 * (90 - deg)).astype(jnp.int32))
+                * (b > 1024).astype(jnp.int32)
+            )
+            != 0,
+            md_o,
+            nd_o,
+        )
 
 
 def prepare_aux(
     md: int,
     nd: int,
-    is_vertical: bool = False,
+    fast_mode: bool,
+    is_vertical: bool,
     angleOffset: List[float] = None,
-    deg: float = 0,
+    deg: float = 29,
     Nneighbors: int = 16,
     NI_all=None,
 ):
@@ -160,7 +178,13 @@ def prepare_aux(
 
     angleMask = jnp.ones((md, nd), dtype=np.int32)
     for angle in angleOffset:
-        angleMask = angleMask * WedgeMask(md, nd, Angle=angle, deg=deg)
+        angleMask = angleMask * WedgeMask(
+            md,
+            nd,
+            Angle=angle,
+            deg=deg,
+            fast_mode=fast_mode,
+        )
     angleMask = angleMask[None]
     angleMask = angleMask.reshape(angleMask.shape[0], -1)[:, : md * nd // 2]
     hier_mask = jnp.where(angleMask == 1)[1]  ##(3, N)
@@ -187,8 +211,6 @@ def global_correction(mean, result):
 
 
 def destripe_train_params(
-    loss_eps: float = 10,
-    qr: float = 0.5,
     resample_ratio: int = 3,
     GF_kernel_size_train: int = 29,
     GF_kernel_size_inference: int = 29,
@@ -204,6 +226,7 @@ def destripe_train_params(
     fusion_GF_kernel_size: int = 49,
     fusion_Gaussian_kernel_size: int = 49,
     require_global_correction: bool = True,
+    fast_mode: bool = False,
 ):
     kwargs = locals()
     return kwargs
