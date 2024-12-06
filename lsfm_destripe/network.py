@@ -296,23 +296,17 @@ class DeStripeModel(hk.Module):
         NI,
         m_l,
         n_l,
-        m_h,
-        n_h,
-        KS,
         r,
         Angle_X1=None,
         Angle_X2=None,
         inc=16,
-        GFr=49,
         viewnum=1,
-        device="gpu",
         non_positive=False,
     ):
         super().__init__()
         self.NI, self.hier_mask, self.hier_ind, self.inc = NI, hier_mask, hier_ind, inc
 
         self.m_l, self.n_l = m_l, n_l
-        self.m_h, self.n_h = m_h, n_h
         self.Angle = Angle
 
         gx_0 = jnp.fft.fftshift(

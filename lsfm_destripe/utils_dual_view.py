@@ -53,7 +53,12 @@ class GuidedFilter:
         ) / 0.001, mean_y_tmp
 
 
-def fusion_perslice(topSlice, bottomSlice, boundary, GFr):
+def fusion_perslice(
+    topSlice,
+    bottomSlice,
+    boundary,
+    GFr,
+):
     GFr = [1, GFr]
     topMask = (jnp.arange(topSlice.shape[-2])[None, None, :, None] < boundary).astype(
         jnp.float32
