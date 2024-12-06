@@ -3,8 +3,6 @@ import numpy as np
 from scipy.ndimage import rotate
 import math
 import scipy
-import torch
-from torch.nn import functional as F
 import jax
 import jax.numpy as jnp
 import copy

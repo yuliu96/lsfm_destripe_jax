@@ -8,8 +8,6 @@ from jax import random
 from jax import jit
 from functools import partial
 import scipy
-import torch.fft as fft
-import torch
 from lsfm_destripe.utils_jax import generate_mapping_coordinates
 
 
