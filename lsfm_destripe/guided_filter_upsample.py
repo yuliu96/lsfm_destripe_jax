@@ -153,7 +153,7 @@ class GuidedFilterHR_fast:
             )
             hx_1 = jnp.asarray(
                 scipy.ndimage.rotate(
-                    hX.cpu(),
+                    hX,
                     Angle,
                     axes=(-2, -1),
                     reshape=True,
