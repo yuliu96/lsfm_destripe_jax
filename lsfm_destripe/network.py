@@ -496,7 +496,7 @@ class DeStripeModel(hk.Module):
             )
         )
 
-    def __call__(self, aver, Xf, target, boundary):
+    def __call__(self, aver, Xf, target, fusion_mask):
         Xf = self.p(Xf)  # (M*N, 2,)
         Xf_tvx = self.gnn(Xf)
         X_fourier = self.merge(self.tv_uint(Xf_tvx, Xf))
@@ -507,6 +507,6 @@ class DeStripeModel(hk.Module):
             jnp.float32,
             init=jnp.ones,
         )
-        outputGNNraw = self.fuse(outputGNNraw + alpha, boundary)
+        outputGNNraw = self.fuse(outputGNNraw + alpha, fusion_mask)
         outputGNNraw = self.non_positive_unit(outputGNNraw, target)
         return outputGNNraw
