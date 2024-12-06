@@ -110,13 +110,13 @@ def WedgeMask(
     tmp = jnp.hstack((jnp.flip(tmp[:, 1:], 1), tmp))
     tmp = jnp.vstack((jnp.flip(tmp[1:, :], 0), tmp))
     b = tmp[md - md // 2 : md + md // 2 + 1, nd - nd // 2 : nd + nd // 2 + 1]
-    b = (
+    bb = (
         jnp.abs(jnp.arange(nd) - nd // 2)[None, :] > nd // 4 * jnp.ones(md)[:, None]
     ).astype(jnp.int32)
     if fast_mode:
         return crop_center(
             (
-                ((a < math.pi / 180 * (90 - deg)).astype(jnp.int32) + b)
+                ((a < math.pi / 180 * (90 - deg)).astype(jnp.int32) + bb)
                 * (b > 1024).astype(jnp.int32)
             )
             != 0,
