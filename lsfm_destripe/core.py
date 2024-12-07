@@ -99,7 +99,7 @@ class DeStripe:
 
         if sample_params["view_num"] > 1:
             assert X.shape[1] == 2, print("input X must have 2 channels.")
-            assert isinstance(boundary, np.ndarray), print(
+            assert not isinstance(boundary, type(None)), print(
                 "dual-view fusion boundary is missing."
             )
             dualtarget, fusion_mask = fusion_perslice(
