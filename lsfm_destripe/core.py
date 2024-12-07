@@ -311,7 +311,7 @@ class DeStripe:
         GuidedFilterHRModel = GuidedFilterHR_fast(
             rx=train_params["gf_kernel_size"],
             ry=1,
-            angleList=sample_params["angle_offset_X1"],
+            angleList=sample_params["angle_offset"],
         )
 
         network = transform_cmplx_haiku_model(
