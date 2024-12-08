@@ -87,11 +87,9 @@ class GuidedFilterHR_fast:
         self,
         rx,
         ry,
-        angleList,
     ):
         self.rx = rx
         self.ry = ry
-        self.angleList = angleList
 
     def __call__(self, xx, yy, coor, hX, fidelity_first):
         hXX = copy.deepcopy(hX)
