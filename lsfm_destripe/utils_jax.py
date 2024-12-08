@@ -11,7 +11,7 @@ import SimpleITK as sitk
 
 def generate_mask_dict(
     dualtargetd,
-    boundary,
+    fusion_mask,
     Dx,
     Dy,
     DGaussxx,
@@ -68,26 +68,13 @@ def generate_mask_dict(
         ** 12
     )
 
-    if sample_params["view_num"] > 1:
-        mask_x1_f = np.isin(
-            sample_params["angle_offset"], sample_params["angle_offset_X1"]
-        )  # [:, None].repeat(5, 1).reshape(-1)
-        mask_x2_f = np.isin(
-            sample_params["angle_offset"], sample_params["angle_offset_X2"]
-        )  # [:, None].repeat(5, 1).reshape(-1)
-        mask_x1 = mask_x1_f[:, None].repeat(5, 1).reshape(-1)
-        mask_x2 = mask_x2_f[:, None].repeat(5, 1).reshape(-1)
-        mask_valid = mask_x1[None, :, None, None] * (
-            jnp.arange(md)[:, None]
-            < (boundary[:, :, :, :nd] + md * sample_params["r"] / 10)
-            / sample_params["r"]
-        ) + mask_x2[None, :, None, None] * (
-            jnp.arange(md)[:, None]
-            >= (boundary[:, :, :, :nd] - md * sample_params["r"] / 10)
-            / sample_params["r"]
-        )
-        mask_tv = mask_tv * mask_valid[:, ::5, :, :]
-        mask_hessian = mask_hessian * mask_valid
+    mask_valid = jnp.zeros_like(mask_hessian)
+    for i, ao in enumerate(sample_params["angle_offset_individual"]):
+        mask_xi_f = np.isin(sample_params["angle_offset"], ao)
+        mask_xi = mask_xi_f[:, None].repeat(5, 1).reshape(-1)
+        mask_valid += mask_xi[None, :, None, None] * fusion_mask[:, i : i + 1, :, :]
+    mask_tv = mask_tv * mask_valid[:, ::5, :, :]
+    mask_hessian = mask_hessian * mask_valid
 
     mask_tv_f = -hk.max_pool(
         -mask_tv,
