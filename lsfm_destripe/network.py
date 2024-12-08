@@ -301,10 +301,7 @@ class DeStripeModel(hk.Module):
         m_l,
         n_l,
         r,
-        Angle_X1=None,
-        Angle_X2=None,
         inc=16,
-        viewnum=1,
         non_positive=False,
     ):
         super().__init__()
@@ -376,25 +373,7 @@ class DeStripeModel(hk.Module):
             self.latentProcess.append(
                 hk.Sequential([CLinear(inc), complexReLU, CLinear(inc)])
             )
-        self.basep = hk.Sequential(
-            [
-                hk.Linear(inc),
-                jax.nn.relu,
-                hk.Linear(inc),
-                jax.nn.relu,
-                hk.Linear(1),
-            ]
-        )
-        self.basep2 = hk.Sequential(
-            [
-                hk.Linear(inc),
-                jax.nn.relu,
-                hk.Linear(inc),
-                jax.nn.relu,
-                hk.Linear(1),
-            ]
-        )
-        self.ainput = jnp.ones((viewnum, 1))
+        self.ainput = jnp.ones((1, 1))
         self.merge = hk.Sequential(
             [
                 CLinear(inc),
@@ -404,73 +383,19 @@ class DeStripeModel(hk.Module):
                 CLinear(1),
             ]
         )
-        self.viewnum = viewnum
 
-        self.fuse = dual_view_fusion() if viewnum == 2 else identical_func()
-        self.gnn = (
-            gnn_dual(self.NI, self.hier_mask, self.hier_ind, inc)
-            if viewnum == 2
-            else gnn(self.NI, self.hier_mask, self.hier_ind, inc)
+        self.gnn = gnn(self.NI, self.hier_mask, self.hier_ind, inc)
+
+        self.tv_uint = tv_uint(
+            self.TVfftx,
+            self.TVffty,
+            self.inverseTVfftx,
+            self.inverseTVffty,
+            self.eigDtD,
+            self.edgeProcess,
+            self.latentProcess,
         )
 
-        self.tv_uint = (
-            tv_uint_dual(
-                [
-                    self.TVfftx[np.isin(Angle, Angle_X1)],
-                    self.TVfftx[np.isin(Angle, Angle_X2)],
-                ],
-                [
-                    self.TVffty[np.isin(Angle, Angle_X1)],
-                    self.TVffty[np.isin(Angle, Angle_X2)],
-                ],
-                [
-                    self.inverseTVfftx[np.isin(Angle, Angle_X1)],
-                    self.inverseTVfftx[np.isin(Angle, Angle_X2)],
-                ],
-                [
-                    self.inverseTVffty[np.isin(Angle, Angle_X1)],
-                    self.inverseTVffty[np.isin(Angle, Angle_X2)],
-                ],
-                [
-                    self.eigDtD[np.isin(Angle, Angle_X1)],
-                    self.eigDtD[np.isin(Angle, Angle_X2)],
-                ],
-                [
-                    [
-                        self.edgeProcess[i]
-                        for i, j in enumerate(np.isin(Angle, Angle_X1))
-                        if j
-                    ],
-                    [
-                        self.edgeProcess[i]
-                        for i, j in enumerate(np.isin(Angle, Angle_X2))
-                        if j
-                    ],
-                ],
-                [
-                    [
-                        self.latentProcess[i]
-                        for i, j in enumerate(np.isin(Angle, Angle_X1))
-                        if j
-                    ],
-                    [
-                        self.latentProcess[i]
-                        for i, j in enumerate(np.isin(Angle, Angle_X2))
-                        if j
-                    ],
-                ],
-            )
-            if viewnum == 2
-            else tv_uint(
-                self.TVfftx,
-                self.TVffty,
-                self.inverseTVfftx,
-                self.inverseTVffty,
-                self.eigDtD,
-                self.edgeProcess,
-                self.latentProcess,
-            )
-        )
         self.non_positive_unit = (
             non_positive_unit() if non_positive else identical_func()
         )
@@ -507,7 +432,7 @@ class DeStripeModel(hk.Module):
                         (z, aver, jnp.conj(jnp.flip(z, -2))),
                         -2,
                     )
-                    .reshape(1, self.m_l, -1, self.viewnum)
+                    .reshape(1, self.m_l, -1, 1)
                     .transpose(0, 3, 1, 2),
                     axes=(-2, -1),
                 )
@@ -519,7 +444,6 @@ class DeStripeModel(hk.Module):
         aver,
         Xf,
         target,
-        fusion_mask,
     ):
         Xf = self.p(Xf)  # (M*N, 2,)
         Xf_tvx = self.gnn(Xf)
@@ -527,10 +451,10 @@ class DeStripeModel(hk.Module):
         outputGNNraw = self.fourierResult(X_fourier[..., 0], aver)
         alpha = hk.get_parameter(
             "alpha",
-            (1, self.viewnum, 1, 1),
+            (1, 1, 1, 1),
             jnp.float32,
             init=jnp.ones,
         )
-        outputGNNraw = self.fuse(outputGNNraw + alpha, fusion_mask)
+        outputGNNraw = outputGNNraw + alpha
         outputGNNraw = self.non_positive_unit(outputGNNraw, target)
         return outputGNNraw
