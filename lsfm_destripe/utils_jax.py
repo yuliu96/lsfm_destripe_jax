@@ -270,7 +270,6 @@ class update_jax:
             {
                 "aver": aver,
                 "Xf": xf,
-                "fusion_mask": boundary,
                 "target": y,
             },
             y,
