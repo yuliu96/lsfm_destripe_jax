@@ -8,6 +8,7 @@ from jax import jit, value_and_grad
 import math
 import SimpleITK as sitk
 import copy
+from typing import List
 
 
 def NeighborSampling(
