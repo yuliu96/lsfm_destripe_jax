@@ -4,7 +4,6 @@ from typing import Union, Dict
 import copy
 import jax.numpy as jnp
 from lsfm_destripe.utils_jax import (
-    transform_cmplx_model,
     initialize_cmplx_model,
     update_jax,
     generate_mask_dict,
@@ -16,6 +15,7 @@ import dask.array as da
 from lsfm_destripe.utils import (
     global_correction,
     destripe_train_params,
+    transform_cmplx_model,
 )
 import matplotlib.pyplot as plt
 from lsfm_destripe.network import DeStripeModel
