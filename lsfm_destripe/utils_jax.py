@@ -14,12 +14,14 @@ from lsfm_destripe.utils import crop_center
 
 def image_resize(
     x,
+    b,
+    c,
     m,
     n,
 ):
     return jax.image.resize(
         x,
-        (1, 1, m, n),
+        (b, c, m, n),
         method="lanczos5",
     )
 
@@ -430,7 +432,6 @@ class update_jax:
         opt_state,
         aver,
         xf,
-        boundary,
         y,
         mask_dict,
         hy,

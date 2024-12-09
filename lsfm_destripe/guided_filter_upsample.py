@@ -5,7 +5,6 @@ import jax
 import numpy as np
 import scipy
 from lsfm_destripe.utils import crop_center
-from lsfm_destripe.utils_jax import image_resize
 
 
 def wave_rec(
@@ -93,41 +92,63 @@ class GuidedFilterHR_fast:
         self.ry = ry
 
     def __call__(
-        self, xx, yy, hX, fusion_mask, angle_offset_individual, fidelity_first
+        self,
+        xx,
+        yy,
+        hX,
+        fusion_mask,
+        angle_offset_individual,
+        fidelity_first,
+        backend,
     ):
         m, n = hX.shape[-2:]
         hXX = copy.deepcopy(hX)
-        hX = image_resize(
+        hX = jax.image.resize(
             xx,
-            m,
-            n,
+            (
+                1,
+                xx.shape[1],
+                m,
+                n,
+            ),
+            method="lanczos5",
         )
-        recon = image_resize(
+        recon = jax.image.resize(
             yy,
-            m,
-            n,
+            (
+                1,
+                1,
+                m,
+                n,
+            ),
+            method="lanczos5",
         )
-        recon = wave_rec(
-            recon,
-            hXX,
-            recon,
-            "db2",
-            False,
-        )
-        hX = wave_rec(
-            hX,
-            hXX,
-            hX,
-            "db2",
-            False,
-        )
+
         y = jnp.ones_like(fusion_mask)
         for i, angle_list in enumerate(angle_offset_individual):
+            hX_slice = hX[:, i : i + 1, :, :]
+            hXX_slice = hXX[:, i : i + 1, :, :]
+
+            recon_slice = wave_rec(
+                recon,
+                hXX_slice,
+                recon,
+                "db2",
+                False,
+            )
+            hX_slice = wave_rec(
+                hX_slice,
+                hXX_slice,
+                hX_slice,
+                "db2",
+                False,
+            )
+
             y = y.at[:, i : i + 1, :, :].set(
                 self.GF(
-                    hX,
-                    recon,
-                    hXX,
+                    hX_slice,
+                    recon_slice,
+                    hXX_slice,
                     angle_list,
                     fidelity_first,
                 )
