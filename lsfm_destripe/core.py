@@ -195,7 +195,7 @@ class DeStripe:
             train_params["fidelity_first"],
             backend=backend,
         )
-        return Y[0, 0], 10 ** X[0, 0]
+        return Y[0, 0], 10 ** np.asarray(target[0, 0])
 
     @staticmethod
     def train_on_full_arr(
