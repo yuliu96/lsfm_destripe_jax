@@ -3,9 +3,8 @@ import jax.numpy as jnp
 import copy
 import jax
 import numpy as np
+import scipy
 from lsfm_destripe.utils import crop_center
-import dm_pix
-import math
 
 
 def wave_rec(
@@ -136,15 +135,36 @@ class GuidedFilterHR_fast:
     ):
         _, _, m, n = hX.shape
         for i, Angle in enumerate((-1 * np.array(angle_list)).tolist()):
-            x_1 = dm_pix.rotate(
-                xx[0, 0][..., None], Angle / 180 * math.pi, order=1, mode="reflect"
-            )[..., 0][None, None]
-            y_1 = dm_pix.rotate(
-                yy[0, 0][..., None], Angle / 180 * math.pi, order=1, mode="reflect"
-            )[..., 0][None, None]
-            hx_1 = dm_pix.rotate(
-                hX[0, 0][..., None], Angle / 180 * math.pi, order=1, mode="reflect"
-            )[..., 0][None, None]
+            x_1 = jnp.asarray(
+                scipy.ndimage.rotate(
+                    xx,
+                    Angle,
+                    axes=(-2, -1),
+                    reshape=True,
+                    order=1,
+                    mode="reflect",
+                )
+            )
+            y_1 = jnp.asarray(
+                scipy.ndimage.rotate(
+                    yy,
+                    Angle,
+                    axes=(-2, -1),
+                    reshape=True,
+                    order=1,
+                    mode="reflect",
+                )
+            )
+            hx_1 = jnp.asarray(
+                scipy.ndimage.rotate(
+                    hX,
+                    Angle,
+                    axes=(-2, -1),
+                    reshape=True,
+                    order=1,
+                    mode="reflect",
+                )
+            )
             pad = [(0, 0), (0, 0)]
             if x_1.shape[-2] % 2 == 0:
                 pad = pad + [(0, 1)]
@@ -213,14 +233,41 @@ class GuidedFilterHR_fast:
                 "db12",
                 False if fidelity_first else True,
             )
-            xx = dm_pix.rotate(
-                x_1[0, 0][..., None], -Angle / 180 * math.pi, order=1, mode="reflect"
-            )[..., 0][None, None]
-            yy = dm_pix.rotate(
-                y_1[0, 0][..., None], -Angle / 180 * math.pi, order=1, mode="reflect"
-            )[..., 0][None, None]
-            hX = dm_pix.rotate(
-                hx_1[0, 0][..., None], -Angle / 180 * math.pi, order=1, mode="reflect"
-            )[..., 0][None, None]
-            print(hX.shape)
+            xx = crop_center(
+                scipy.ndimage.rotate(
+                    x_1,
+                    -Angle,
+                    axes=(-2, -1),
+                    reshape=True,
+                    order=1,
+                    mode="reflect",
+                ),
+                m,
+                n,
+            )
+            yy = crop_center(
+                scipy.ndimage.rotate(
+                    y_1,
+                    -Angle,
+                    axes=(-2, -1),
+                    reshape=True,
+                    order=1,
+                    mode="reflect",
+                ),
+                m,
+                n,
+            )
+            hX = crop_center(
+                scipy.ndimage.rotate(
+                    hx_1,
+                    -Angle,
+                    axes=(-2, -1),
+                    reshape=True,
+                    order=1,
+                    mode="reflect",
+                ),
+                m,
+                n,
+            )
+
         return hX
