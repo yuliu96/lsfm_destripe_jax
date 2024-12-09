@@ -7,7 +7,6 @@ from scipy import ndimage
 from jax import random
 from jax import jit
 from functools import partial
-import scipy
 from lsfm_destripe.utils_jax import generate_mapping_coordinates
 
 

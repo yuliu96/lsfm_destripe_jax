@@ -3,7 +3,6 @@ import jax.numpy as jnp
 import copy
 import jax
 import numpy as np
-import scipy
 from lsfm_destripe.utils import crop_center
 import dm_pix
 
@@ -222,4 +221,5 @@ class GuidedFilterHR_fast:
             hX = dm_pix.rotate(
                 hx_1[0, 0][..., None], -Angle / 180 * math.pi, order=1, mode="reflect"
             )[..., 0][None, None]
+            print(hX.shape)
         return hX

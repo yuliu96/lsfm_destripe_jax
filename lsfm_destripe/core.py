@@ -1,7 +1,6 @@
 import numpy as np
 import jax
-from lsfm_destripe.utils_dual_view import fusion_perslice
-from typing import Union, Tuple, Optional, List, Dict
+from typing import Union, Dict
 import copy
 import jax.numpy as jnp
 from lsfm_destripe.utils_jax import (
@@ -23,7 +22,6 @@ from lsfm_destripe.network import DeStripeModel
 from lsfm_destripe.guided_filter_upsample import GuidedFilterHR_fast
 import dask.array as da
 from aicsimageio import AICSImage
-import tifffile
 from lsfm_destripe.loss_term import Loss
 import torch
 
