@@ -95,7 +95,7 @@ class GuidedFilterHR_fast:
     def __call__(
         self, xx, yy, hX, fusion_mask, angle_offset_individual, fidelity_first
     ):
-        m, n = hXX.shape[-2:]
+        m, n = hX.shape[-2:]
         hXX = copy.deepcopy(hX)
         hX = image_resize(
             xx,
