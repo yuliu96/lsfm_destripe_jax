@@ -9,11 +9,11 @@ from lsfm_destripe.utils_jax import (
     update_jax,
     generate_upsample_matrix,
     generate_mask_dict,
+    prepare_aux,
 )
 import tqdm
 import dask.array as da
 from lsfm_destripe.utils import (
-    prepare_aux,
     global_correction,
     destripe_train_params,
 )
