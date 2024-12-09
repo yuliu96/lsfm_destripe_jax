@@ -171,26 +171,6 @@ class gnn(hk.Module):
         return Xf_tvx
 
 
-class gnn_dual(hk.Module):
-    def __init__(
-        self,
-        NI,
-        hier_mask,
-        hier_ind,
-        inc,
-    ):
-        super().__init__()
-        self.gnn_0 = gnn(NI[0], hier_mask[0], hier_ind[0], inc)
-        self.gnn_1 = gnn(NI[1], hier_mask[1], hier_ind[1], inc)
-
-    def __call__(
-        self,
-        Xf,
-    ):
-        Xf_0, Xf_1 = jnp.split(Xf, indices_or_sections=2, axis=-2)
-        return [self.gnn_0(Xf_0), self.gnn_1(Xf_1)]
-
-
 class tv_uint(hk.Module):
     def __init__(
         self,
@@ -238,47 +218,6 @@ class tv_uint(hk.Module):
                 )
             )
         return sum(X_fourier)  # self.merge(jnp.concatenate(X_fourier, -1))
-
-
-class tv_uint_dual(hk.Module):
-    def __init__(
-        self,
-        TVfftx,
-        TVffty,
-        inverseTVfftx,
-        inverseTVffty,
-        eigDtD,
-        edgeProcess,
-        latentProcess,
-    ):
-        super().__init__()
-        self.tv_uint0 = tv_uint(
-            TVfftx[0],
-            TVffty[0],
-            inverseTVfftx[0],
-            inverseTVffty[0],
-            eigDtD[0],
-            edgeProcess[0],
-            latentProcess[0],
-        )
-        self.tv_uint1 = tv_uint(
-            TVfftx[1],
-            TVffty[1],
-            inverseTVfftx[1],
-            inverseTVffty[1],
-            eigDtD[1],
-            edgeProcess[1],
-            latentProcess[1],
-        )
-
-    def __call__(
-        self,
-        Xf_tvx,
-        Xf,
-    ):
-        X_fourier0 = self.tv_uint0(Xf_tvx[0], Xf[:, 0:1, :])
-        X_fourier1 = self.tv_uint1(Xf_tvx[1], Xf[:, 1:2, :])
-        return jnp.concatenate((X_fourier0, X_fourier1), -2)
 
 
 class non_positive_unit:
