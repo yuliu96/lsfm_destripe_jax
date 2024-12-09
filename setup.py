@@ -47,7 +47,6 @@ requirements = [
     "tqdm",
     "matplotlib",
     "dm-haiku",
-    "dm-pix",
     "SimpleITK",
     "jaxwt",
 ]
