@@ -7,7 +7,6 @@ from lsfm_destripe.utils_jax import (
     transform_cmplx_haiku_model,
     initialize_cmplx_haiku_model,
     update_jax,
-    generate_upsample_matrix,
     generate_mask_dict,
     prepare_aux,
 )
@@ -99,8 +98,6 @@ class DeStripe:
         Xd = jax.image.resize(X, (1, 1, md, nd), method="lanczos5")
         fusion_maskd = fusion_mask[:, :, :: sample_params["r"], :]
 
-        coor = generate_upsample_matrix(Xd, X, sample_params["r"])
-
         # to Fourier
         Xf = (
             jnp.fft.fftshift(jnp.fft.fft2(Xd), axes=(-2, -1))
@@ -142,7 +139,6 @@ class DeStripe:
         )
         mask_dict.update(
             {
-                "coor": coor,
                 "mse_mask": mask[:, :, :: sample_params["r"], :],
             }
         )
@@ -167,7 +163,6 @@ class DeStripe:
         Y = GuidedFilterHRModel(
             Xd,
             Y_raw,
-            coor,
             X,
             fusion_mask,
             sample_params["angle_offset_individual"],

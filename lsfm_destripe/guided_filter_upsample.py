@@ -92,7 +92,7 @@ class GuidedFilterHR_fast:
         self.ry = ry
 
     def __call__(
-        self, xx, yy, coor, hX, fusion_mask, angle_offset_individual, fidelity_first
+        self, xx, yy, hX, fusion_mask, angle_offset_individual, fidelity_first
     ):
         hXX = copy.deepcopy(hX)
         hX = jax.image.resize(xx, hXX.shape, method="lanczos5")

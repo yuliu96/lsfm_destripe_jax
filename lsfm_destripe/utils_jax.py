@@ -312,20 +312,6 @@ def generate_mask_dict(
     return mask_dict
 
 
-def generate_upsample_matrix(
-    Xd,
-    X,
-    r,
-):
-    t = jnp.linspace(0, Xd.shape[-2] - 1, (Xd.shape[-2] - 1) * r + 1)
-    t = jnp.concatenate((t, t[1:r] + t[-1]))
-
-    coor = jnp.zeros((4, X.shape[-2], X.shape[-1]))
-    coor = coor.at[2, :, :].set(t[:, None])
-    coor = coor.at[3, :, :].set(jnp.arange(X.shape[-1])[None, :])
-    return coor
-
-
 def generate_mapping_matrix(
     angle,
     m,

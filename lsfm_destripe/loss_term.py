@@ -415,15 +415,6 @@ class Loss:
         outputGNNraw_original = jnp.clip(
             outputGNNraw_original, targets.min(), targets.max()
         )
-        outputGNNraw_original_full = (
-            jax.scipy.ndimage.map_coordinates(
-                outputGNNraw_original - targets,
-                mask_dict["coor"],
-                order=1,
-                mode="reflect",
-            )[None, None]
-            + hy
-        )
         outputGNNraw_original_pad = jnp.pad(
             targets - outputGNNraw_original,
             ((0, 0), (0, 0), (0, 0), (self.GF_pad // 2, self.GF_pad // 2)),
@@ -432,7 +423,6 @@ class Loss:
 
         m, n = outputGNNraw_original.shape[-2:]
 
-        outputGNNraw = outputGNNraw_original_full[:, :, :: self.r, :]
         mse = 1 * jnp.sum(
             jnp.abs(
                 outputGNNraw_original_pad[
