@@ -4,7 +4,6 @@ import math
 import jax
 from jax import jit
 from functools import partial
-from lsfm_destripe.utils_jax import image_resize
 
 
 class Loss:
@@ -441,10 +440,15 @@ class Loss:
         #     (outputGNNraw_original, outputGNNraw),
         #     0,
         # )
-        outputGNNraw_original_f = image_resize(
+        outputGNNraw_original_f = jax.image.resize(
             outputGNNraw_original,
-            m,
-            n // self.r,
+            (
+                1,
+                1,
+                m,
+                n // self.r,
+            ),
+            method="lanczos5",
         )
 
         tv = self.total_variation_cal(

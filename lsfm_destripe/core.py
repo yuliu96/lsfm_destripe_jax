@@ -389,7 +389,7 @@ class DeStripe:
         display: bool = False,
         non_positive: bool = False,
         **kwargs,
-    ):  # angle_offset_X2
+    ):
         if x is not None:
             print("Start DeStripe...\n")
             flag_compose = False
