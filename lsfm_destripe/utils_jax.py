@@ -402,18 +402,6 @@ def cADAM(
     return init, update, get_params
 
 
-def transform_cmplx_model(
-    model,
-    **model_kwargs,
-):
-    def forward_pass(**x):
-        net = model(**model_kwargs)
-        return net(**x)
-
-    network = hk.without_apply_rng(hk.transform(forward_pass))
-    return network
-
-
 def initialize_cmplx_model(
     network,
     key,

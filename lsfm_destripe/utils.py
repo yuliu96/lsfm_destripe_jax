@@ -1,6 +1,24 @@
 from typing import List
 import numpy as np
 import scipy
+import haiku as hk
+
+
+def transform_cmplx_model(
+    model,
+    backend,
+    device,
+    **model_kwargs,
+):
+    def forward_pass(**x):
+        net = model(**model_kwargs)
+        return net(**x)
+
+    if backend == "jax":
+        network = hk.without_apply_rng(hk.transform(forward_pass))
+    else:
+        network = model(**model_kwargs).to(device)
+    return network
 
 
 def crop_center(

@@ -298,6 +298,8 @@ class DeStripe:
             hier_ind=hier_ind_arr,
             r=sample_params["r"],
             non_positive=non_positive,
+            backend="jax",
+            device=device,
         )
 
         train_params.update(
