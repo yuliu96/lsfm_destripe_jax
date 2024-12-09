@@ -84,7 +84,7 @@ class DeStripe:
         train_params: Dict,
         X: np.ndarray,
         mask: np.ndarray = None,
-        boundary: np.ndarray = None,
+        fusion_mask: np.ndarray = None,
         s_: int = 1,
         z: int = 1,
         backend: str = "jax",
@@ -97,35 +97,11 @@ class DeStripe:
             sample_params["nd"] if sample_params["is_vertical"] else sample_params["md"]
         )
 
-        if sample_params["view_num"] > 1:
-            assert X.shape[1] == 2, print("input X must have 2 channels.")
-            assert not isinstance(boundary, type(None)), print(
-                "dual-view fusion boundary is missing."
-            )
-            dualtarget, fusion_mask = fusion_perslice(
-                X[:, :1, :, :],
-                X[:, 1:, :, :],
-                boundary,
-                train_params["fusion_kernel_size"],
-            )
-        Xd = X[:, :, :: sample_params["r"], :]
-
-        if sample_params["view_num"] > 1:
-            dualtargetd, fusion_maskd = fusion_perslice(
-                Xd[:, :1, :, :],
-                Xd[:, 1:, :, :],
-                boundary / sample_params["r"],
-                (train_params["fusion_kernel_size"] // sample_params["r"]) // 2 * 2 + 1,
-            )
+        # Xd = X[:, :, :: sample_params["r"], :]
+        Xd = jax.image.resize(X, (1, 1, md, nd), method="lanczos5")
+        fusion_maskd = fusion_mask[:, :, :: sample_params["r"], :]
 
         coor = generate_upsample_matrix(Xd, X, sample_params["r"])
-
-        if sample_params["view_num"] > 1:
-            pass
-        else:
-            dualtarget = copy.deepcopy(X)
-            dualtargetd = copy.deepcopy(Xd)
-            fusion_maskd = None
 
         # to Fourier
         Xf = (
@@ -142,16 +118,15 @@ class DeStripe:
             {
                 "aver": aver,
                 "Xf": Xf,
-                "target": dualtargetd,
-                "fusion_mask": fusion_maskd,
+                "target": Xd,
             },
         )
 
         opt_state = update_method.opt_init(net_params)
 
         mask_dict = generate_mask_dict(
-            dualtargetd,
-            boundary,
+            Xd,
+            fusion_maskd,
             update_method.loss.Dx,
             update_method.loss.Dy,
             update_method.loss.DGaussxx,
@@ -163,9 +138,9 @@ class DeStripe:
         )
 
         targets_f = jax.image.resize(
-            dualtargetd,
+            Xd,
             (1, 1, md, nd // sample_params["r"]),
-            method="bilinear",
+            method="lanczos5",
         )
         mask_dict.update(
             {
@@ -186,50 +161,61 @@ class DeStripe:
                 aver,
                 Xf,
                 fusion_maskd,
-                dualtargetd,
+                Xd,
                 mask_dict,
-                dualtarget,
+                X,
                 targets_f,
             )
-
-        Y = 10 ** GuidedFilterHRModel(
-            dualtargetd,
+        Y = GuidedFilterHRModel(
+            Xd,
             Y_raw,
             coor,
-            dualtarget,
+            X,
+            fusion_mask,
+            sample_params["angle_offset_individual"],
             train_params["fidelity_first"],
         )
-        return Y[0, 0], 10 ** dualtarget[0, 0]
+        return Y[0, 0], 10 ** X[0, 0]
 
     @staticmethod
     def train_on_full_arr(
         X: Union[np.ndarray, da.core.Array],
         is_vertical: bool,
-        angle_offset_X1: List,
-        angle_offset_X2: List,
+        angle_offset_dict: Dict,
         mask: Union[np.ndarray, da.core.Array],
         train_params: Dict = None,
-        boundary: np.ndarray = None,
+        fusion_mask: Union[np.ndarray, da.core.Array] = None,
         display: bool = False,
         device: str = "cpu",
         non_positive: bool = False,
         backend: str = "jax",
+        flag_compose: bool = False,
     ):
         if train_params is None:
             train_params = destripe_train_params()
         else:
             train_params = destripe_train_params(**train_params)
-        angle_offset = angle_offset_X1 + angle_offset_X2
+        angle_offset = []
+        for key, item in angle_offset_dict.items():
+            angle_offset = angle_offset + item
         angle_offset = list(set(angle_offset))
+        angle_offset_individual = []
+        if flag_compose:
+            for i in range(len(angle_offset_dict)):
+                angle_offset_individual.append(
+                    angle_offset_dict["angle_offset_{}".format(i)]
+                )
+        else:
+            angle_offset_individual.append(angle_offset_dict["angle_offset"])
+
         r = copy.deepcopy(train_params["resample_ratio"])
         sample_params = {
             "is_vertical": is_vertical,
             "angle_offset": angle_offset,
-            "angle_offset_X1": angle_offset_X1,
-            "angle_offset_X2": angle_offset_X2,
+            "angle_offset_individual": angle_offset_individual,
             "r": r,
         }
-        z, view_num, m, n = X.shape
+        z, _, m, n = X.shape
         result = np.zeros((z, m, n), dtype=np.uint16)
         mean = np.zeros(z)
         if sample_params["is_vertical"]:
@@ -244,7 +230,6 @@ class DeStripe:
             if n % 2 == 0:
                 n = n - 1
             n = n * train_params["resample_ratio"]
-        sample_params["view_num"] = view_num
         sample_params["m"], sample_params["n"] = m, n
         if sample_params["is_vertical"]:
             sample_params["md"], sample_params["nd"] = (
@@ -256,62 +241,44 @@ class DeStripe:
                 m,
                 n // train_params["resample_ratio"],
             )
-        hier_mask_arr, hier_ind_arr, NI_arr, NI = prepare_aux(
+
+        hier_mask_arr, hier_ind_arr, NI_arr, _ = prepare_aux(
             sample_params["md"],
             sample_params["nd"],
             train_params["fast_mode"],
             sample_params["is_vertical"],
             np.rad2deg(
-                np.arctan(r * np.tan(np.deg2rad(sample_params["angle_offset_X1"])))
+                np.arctan(r * np.tan(np.deg2rad(sample_params["angle_offset"])))
             ),
             train_params["wedge_degree"],
             train_params["n_neighbors"],
         )
+
         print("Please check the orientation of the stripes...")
-        print(
-            "Please check the illumination orientations of the inputs (for dual inputs only)..."
+        fig, ax = plt.subplots(
+            1, 2 if not flag_compose else len(angle_offset_individual), dpi=200
         )
-        fig, ax = plt.subplots(1, 2, dpi=200)
-        if X.shape[1] > 1:
-            title = ["input with top/left illu", "input with bottom/right illu"]
-        else:
-            title = ["input"]
+        if not flag_compose:
             ax[1].set_visible(False)
-        for i in range(X.shape[1]):
-            demo_img = X[X.shape[0] // 2, i, :, :]
+        for i in range(len(angle_offset_individual)):
+            demo_img = X[X.shape[0] // 2, :, :, :]
+            if flag_compose:
+                demo_img = demo_img * fusion_mask[X.shape[0] // 2, :, :, :]
             if not sample_params["is_vertical"]:
-                demo_img = demo_img.T
-            demo_m, demo_n = demo_img.shape
-            ax[i].imshow(demo_img)
-            for deg in sample_params["angle_offset_X{}".format(i + 1)]:
+                demo_img = demo_img.swapaxes(2, 1)
+            demo_m, demo_n = demo_img.shape[-2:]
+            ax[i].imshow(demo_img[i, :])
+            for deg in sample_params["angle_offset_individual"][i]:
                 d = np.tan(np.deg2rad(deg)) * demo_m
                 p0 = [0 + demo_n // 2 - d // 2, d + demo_n // 2 - d // 2]
                 p1 = [0, demo_m - 1]
                 ax[i].plot(p0, p1, "r")
-            ax[i].set_title(title[i], fontsize=8, pad=1)
             ax[i].axis("off")
         plt.show()
-        if view_num > 1:
-            hier_mask_arr_X2, hier_ind_arr_X2, NI_arr_X2, _ = prepare_aux(
-                sample_params["md"],
-                sample_params["nd"],
-                train_params["fast_mode"],
-                sample_params["is_vertical"],
-                np.rad2deg(
-                    np.arctan(r * np.tan(np.deg2rad(sample_params["angle_offset_X2"])))
-                ),
-                train_params["wedge_degree"],
-                train_params["n_neighbors"],
-                NI,
-            )
-            hier_mask_arr = [hier_mask_arr, hier_mask_arr_X2]
-            hier_ind_arr = [hier_ind_arr, hier_ind_arr_X2]
-            NI_arr = [NI_arr, NI_arr_X2]
 
         GuidedFilterHRModel = GuidedFilterHR_fast(
             rx=train_params["gf_kernel_size"],
-            ry=1,
-            angleList=sample_params["angle_offset"],
+            ry=3,
         )
 
         network = transform_cmplx_haiku_model(
@@ -331,10 +298,7 @@ class DeStripe:
             NI=NI_arr,
             hier_mask=hier_mask_arr,
             hier_ind=hier_ind_arr,
-            viewnum=sample_params["view_num"],
             r=sample_params["r"],
-            Angle_X1=sample_params["angle_offset_X1"],
-            Angle_X2=sample_params["angle_offset_X2"],
             non_positive=non_positive,
         )
 
@@ -349,27 +313,22 @@ class DeStripe:
         update_method = update_jax(network, Loss(train_params, sample_params), 0.01)
 
         for i in range(z):
-            input = np.log10(
-                np.clip(np.asarray(X[i : i + 1])[:, :, :m, :n], 1, None)
-            )  # (1, v, m, n)
+            input = np.log10(np.clip(np.asarray(X[i : i + 1])[:, :, :m, :n], 1, None))
             mask_slice = np.asarray(mask[i : i + 1, :m, :n])[None]
+            if flag_compose:
+                fusion_mask_slice = np.asarray(fusion_mask[i : i + 1])[:, :, :m, :n]
+            else:
+                fusion_mask_slice = np.ones(input.shape, dtype=np.float32)
+
             if not sample_params["is_vertical"]:
                 input = input.transpose(0, 1, 3, 2)
                 mask_slice = mask_slice.transpose(0, 1, 3, 2)
+                fusion_mask_slice = fusion_mask_slice.tranpose(0, 1, 3, 2)
+
             input = jnp.asarray(input)
             mask_slice = jnp.asarray(mask_slice)
-            boundary_slice = (
-                jnp.asarray(
-                    boundary[
-                        None,
-                        None,
-                        i : i + 1,
-                        : n if sample_params["is_vertical"] else m,
-                    ]
-                )
-                if boundary is not None
-                else None
-            )
+            fusion_mask_slice = jnp.asarray(fusion_mask_slice)
+
             Y, dualtarget = DeStripe.train_on_one_slice(
                 network,
                 GuidedFilterHRModel,
@@ -378,7 +337,7 @@ class DeStripe:
                 train_params,
                 input,
                 mask_slice,
-                boundary_slice,
+                fusion_mask_slice,
                 i + 1,
                 z,
                 backend=backend,
@@ -410,29 +369,34 @@ class DeStripe:
 
     def train(
         self,
-        X1: Union[str, np.ndarray, da.core.Array],
         is_vertical: bool,
-        angle_offset_X1: List,
-        X2: Union[str, np.ndarray, da.core.Array] = None,
-        angle_offset_X2: List = [],
+        x: Union[str, np.ndarray, da.core.Array] = None,
+        x_compose: Union[str, np.ndarray, da.core.Array] = None,
         mask: Union[str, np.ndarray, da.core.Array] = None,
-        boundary: Union[str, np.ndarray] = None,
+        fusion_mask: Union[da.core.Array, np.ndarray] = None,
         display: bool = False,
         non_positive: bool = False,
-    ):
+        **kwargs,
+    ):  # angle_offset_X2
+        if x is not None:
+            print("Start DeStripe...\n")
+            flag_compose = False
+        elif x_compose is not None:
+            print("Start DeStripe-FUSE...\n")
+            if fusion_mask is None:
+                print("fusion_mask cannot be missing.")
+                return
+            flag_compose = True
+        else:
+            print("Input is missing.")
+            return
+
         # read in X
-        X1_handle = AICSImage(X1)
-        X1_data = X1_handle.get_image_dask_data("ZYX", T=0, C=0)
-        if X2 is not None:
-            X2_handle = AICSImage(X2)
-            X2_data = X2_handle.get_image_dask_data("ZYX", T=0, C=0)
-        X = (
-            da.stack([X1_data, X2_data], 1)
-            if X2 is not None
-            else da.stack([X1_data], 1)
-        )
-        view_num = X.shape[1]
+        X_handle = AICSImage(x_compose if flag_compose else x)
+        X_data = X_handle.get_image_dask_data("ZYX", T=0, C=0)
+        X = da.stack([X_data], 1)
         z, _, m, n = X.shape
+
         # read in mask
         if mask is None:
             mask_data = np.zeros((z, m, n), dtype=bool)
@@ -442,28 +406,39 @@ class DeStripe:
             assert mask_data.shape == (z, m, n), print(
                 "mask should be of same shape as input volume(s)."
             )
+        angle_offset_dict = {}
+        for key, item in kwargs.items():
+            if key.startswith("angle_offset"):
+                angle_offset_dict.update({key: item})
         # read in dual-result, if applicable
-        if view_num > 1:
-            assert not isinstance(boundary, type(None)), print(
-                "dual-view fusion boundary is missing."
+        if x_compose is not None:
+            assert not isinstance(fusion_mask, type(None)), print(
+                "fusion mask is missing."
             )
-            if isinstance(boundary, str):
-                boundary = tifffile.imread(boundary)
-            assert boundary.shape == (z, n) if is_vertical else (z, m), print(
-                "boundary index should be of shape [z_slices, n columns]."
+            if fusion_mask.ndim == 3:
+                fusion_mask = fusion_mask[None]
+            assert (
+                (fusion_mask.shape[0] == z)
+                and (fusion_mask.shape[2] == m)
+                and (fusion_mask.shape[3] == n)
+            ), print(
+                "fusion mask should be of shape [z_slices, ..., m rows, n columns]."
+            )
+            assert len(angle_offset_dict) == fusion_mask.shape[1], print(
+                "angle offsets should be {} in total.".format(fusion_mask.shape[1])
             )
         # training
         out = self.train_on_full_arr(
             X,
             is_vertical,
-            angle_offset_X1,
-            angle_offset_X2,
+            angle_offset_dict,
             mask_data,
             self.train_params,
-            boundary,
+            fusion_mask,
             display=display,
             device=self.device,
             non_positive=non_positive,
             backend=self.backend,
+            flag_compose=flag_compose,
         )
         return out

@@ -73,6 +73,7 @@ def generate_mask_dict(
         mask_xi_f = np.isin(sample_params["angle_offset"], ao)
         mask_xi = mask_xi_f[:, None].repeat(5, 1).reshape(-1)
         mask_valid += mask_xi[None, :, None, None] * fusion_mask[:, i : i + 1, :, :]
+    mask_valid = mask_valid > 0
     mask_tv = mask_tv * mask_valid[:, ::5, :, :]
     mask_hessian = mask_hessian * mask_valid
 
@@ -96,7 +97,7 @@ def generate_mask_dict(
     mask_hessian_f = []
     for data_ind in mask_hessian_f_split:
         mask_hessian_f.append(
-            jnp.max(mask_hessian[:, data_ind, :, :], 1, keepdims=True)
+            jnp.mean(mask_hessian[:, data_ind, :, :], 1, keepdims=True)
         )
     mask_hessian_f = jnp.concatenate(mask_hessian_f, 1)
     mask_hessian_f = -hk.max_pool(

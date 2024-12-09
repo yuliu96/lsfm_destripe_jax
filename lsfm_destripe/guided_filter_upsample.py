@@ -5,6 +5,7 @@ import jax
 import numpy as np
 import scipy
 from lsfm_destripe.utils import crop_center
+import dm_pix
 
 
 def wave_rec(
@@ -91,20 +92,12 @@ class GuidedFilterHR_fast:
         self.rx = rx
         self.ry = ry
 
-    def __call__(self, xx, yy, coor, hX, fidelity_first):
+    def __call__(
+        self, xx, yy, coor, hX, fusion_mask, angle_offset_individual, fidelity_first
+    ):
         hXX = copy.deepcopy(hX)
-        hX = jax.scipy.ndimage.map_coordinates(
-            xx,
-            coor,
-            order=1,
-            mode="reflect",
-        )[None, None]
-        recon = jax.scipy.ndimage.map_coordinates(
-            yy,
-            coor,
-            order=1,
-            mode="reflect",
-        )[None, None]
+        hX = jax.image.resize(xx, hXX.shape, method="lanczos5")
+        recon = jax.image.resize(yy, hXX.shape, method="lanczos5")
         recon = wave_rec(
             recon,
             hXX,
@@ -119,53 +112,39 @@ class GuidedFilterHR_fast:
             "db2",
             False,
         )
-        recon = self.GF(
-            hX,
-            recon,
-            hXX,
-            fidelity_first,
-        )
-        return recon
+        y = jnp.ones_like(fusion_mask)
+        for i, angle_list in enumerate(angle_offset_individual):
+            y = y.at[:, i : i + 1, :, :].set(
+                self.GF(
+                    hX,
+                    recon,
+                    hXX,
+                    angle_list,
+                    fidelity_first,
+                )
+            )
+        y = (10**y) * fusion_mask
+        return y.sum(1, keepdims=True)
 
     def GF(
         self,
         xx,
         yy,
         hX,
+        angle_list,
         fidelity_first,
     ):
         _, _, m, n = hX.shape
-        for i, Angle in enumerate((-1 * np.array(self.angleList)).tolist()):
-            x_1 = jnp.asarray(
-                scipy.ndimage.rotate(
-                    xx,
-                    Angle,
-                    axes=(-2, -1),
-                    reshape=True,
-                    order=1,
-                    mode="reflect",
-                )
-            )
-            y_1 = jnp.asarray(
-                scipy.ndimage.rotate(
-                    yy,
-                    Angle,
-                    axes=(-2, -1),
-                    reshape=True,
-                    order=1,
-                    mode="reflect",
-                )
-            )
-            hx_1 = jnp.asarray(
-                scipy.ndimage.rotate(
-                    hX,
-                    Angle,
-                    axes=(-2, -1),
-                    reshape=True,
-                    order=1,
-                    mode="reflect",
-                )
-            )
+        for i, Angle in enumerate((-1 * np.array(angle_list)).tolist()):
+            x_1 = dm_pix.rotate(
+                xx[0, 0][..., None], Angle / 180 * math.pi, order=1, mode="reflect"
+            )[..., 0][None, None]
+            y_1 = dm_pix.rotate(
+                yy[0, 0][..., None], Angle / 180 * math.pi, order=1, mode="reflect"
+            )[..., 0][None, None]
+            hx_1 = dm_pix.rotate(
+                hX[0, 0][..., None], Angle / 180 * math.pi, order=1, mode="reflect"
+            )[..., 0][None, None]
             pad = [(0, 0), (0, 0)]
             if x_1.shape[-2] % 2 == 0:
                 pad = pad + [(0, 1)]
@@ -187,65 +166,60 @@ class GuidedFilterHR_fast:
                         (
                             (0, 0),
                             (0, 0),
-                            (self.rx // 2, self.rx // 2),
-                            (self.ry // 2, self.ry // 2),
+                            (49 // 2, 49 // 2),
+                            (0, 0),
                         ),
                         "reflect",
                     ),
-                    [self.rx, self.ry],
+                    [49, 1],
                     [1, 1],
                     "VALID",
                 ),
                 1,
+                keepdims=True,
             )
+            for e in range(3):
+                k = self.rx // 3 // 2 * 2 + 1
+                b = jnp.median(
+                    jax.lax.conv_general_dilated_patches(
+                        jnp.pad(
+                            b,
+                            (
+                                (0, 0),
+                                (0, 0),
+                                (k // 2, k // 2),
+                                (0, 0) if e < 2 else (self.ry // 2, self.ry // 2),
+                            ),
+                            "reflect",
+                        ),
+                        [k, 1 if e < 2 else self.ry],
+                        [1, 1],
+                        "VALID",
+                    ),
+                    1,
+                    keepdims=True,
+                )
             x_1 = wave_rec(
                 x_1 if fidelity_first else y_1,
                 x_1 + b,
                 x_1 + b if fidelity_first else y_1,
-                "db8",
+                "db12",
                 False if fidelity_first else True,
             )
             hx_1 = wave_rec(
                 hx_1 if fidelity_first else y_1,
                 hx_1 + b,
                 hx_1 + b if fidelity_first else y_1,
-                "db8",
+                "db12",
                 False if fidelity_first else True,
             )
-            xx = crop_center(
-                scipy.ndimage.rotate(
-                    x_1,
-                    -Angle,
-                    axes=(-2, -1),
-                    reshape=True,
-                    order=1,
-                    mode="reflect",
-                ),
-                m,
-                n,
-            )
-            yy = crop_center(
-                scipy.ndimage.rotate(
-                    y_1,
-                    -Angle,
-                    axes=(-2, -1),
-                    reshape=True,
-                    order=1,
-                    mode="reflect",
-                ),
-                m,
-                n,
-            )
-            hX = crop_center(
-                scipy.ndimage.rotate(
-                    hx_1,
-                    -Angle,
-                    axes=(-2, -1),
-                    reshape=True,
-                    order=1,
-                    mode="reflect",
-                ),
-                m,
-                n,
-            )
+            xx = dm_pix.rotate(
+                x_1[0, 0][..., None], -Angle / 180 * math.pi, order=1, mode="reflect"
+            )[..., 0][None, None]
+            yy = dm_pix.rotate(
+                y_1[0, 0][..., None], -Angle / 180 * math.pi, order=1, mode="reflect"
+            )[..., 0][None, None]
+            hX = dm_pix.rotate(
+                hx_1[0, 0][..., None], -Angle / 180 * math.pi, order=1, mode="reflect"
+            )[..., 0][None, None]
         return hX

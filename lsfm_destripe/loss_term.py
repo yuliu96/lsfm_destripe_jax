@@ -412,6 +412,9 @@ class Loss:
         targets_f,
     ):
         outputGNNraw_original = network.apply(params, **inputs)
+        outputGNNraw_original = jnp.clip(
+            outputGNNraw_original, targets.min(), targets.max()
+        )
         outputGNNraw_original_full = (
             jax.scipy.ndimage.map_coordinates(
                 outputGNNraw_original - targets,
@@ -443,14 +446,14 @@ class Loss:
             jnp.abs(targets - outputGNNraw_original) * mask_dict["mse_mask"]
         )
 
-        outputGNNraw_original = jnp.concatenate(
-            (outputGNNraw_original, outputGNNraw),
-            0,
-        )
+        # outputGNNraw_original = jnp.concatenate(
+        #     (outputGNNraw_original, outputGNNraw),
+        #     0,
+        # )
         outputGNNraw_original_f = jax.image.resize(
             outputGNNraw_original,
-            (2, 1, m, n // self.r),
-            method="bilinear",
+            (1, 1, m, n // self.r),
+            method="lanczos5",
         )
 
         tv = self.total_variation_cal(
