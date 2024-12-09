@@ -106,6 +106,7 @@ class DeStripe:
             1,
             md,
             nd,
+            backend=backend,
         )
 
         Xd = image_resize(
@@ -114,15 +115,17 @@ class DeStripe:
             X.shape[1],
             md,
             nd,
+            backend=backend,
         )
         fusion_maskd = fusion_mask[:, :, :: sample_params["r"], :]
 
         # to Fourier
-        targetf = (
-            jnp.fft.fftshift(jnp.fft.fft2(targetd), axes=(-2, -1))
-            .reshape(1, targetd.shape[1], -1)[0]
-            .transpose(1, 0)[: md * nd // 2, :][..., None]
-        )
+        if backend == "jax":
+            targetf = (
+                jnp.fft.fftshift(jnp.fft.fft2(targetd), axes=(-2, -1))
+                .reshape(1, targetd.shape[1], -1)[0]
+                .transpose(1, 0)[: md * nd // 2, :][..., None]
+            )
 
         # initialize
         aver = targetd.sum((2, 3))
@@ -134,6 +137,7 @@ class DeStripe:
                 "Xf": targetf,
                 "target": targetd,
             },
+            backend=backend,
         )
 
         opt_state = update_method.opt_init(net_params)
@@ -149,6 +153,7 @@ class DeStripe:
             update_method.loss.p_hessian,
             train_params,
             sample_params,
+            backend=backend,
         )
         targets_f = image_resize(
             targetd,
@@ -156,6 +161,7 @@ class DeStripe:
             1,
             md,
             nd // sample_params["r"],
+            backend=backend,
         )
 
         mask_dict.update(
@@ -266,6 +272,7 @@ class DeStripe:
             ),
             train_params["wedge_degree"],
             train_params["n_neighbors"],
+            backend=backend,
         )
 
         print("Please check the orientation of the stripes...")
@@ -322,8 +329,8 @@ class DeStripe:
                 )
             }
         )
-
-        update_method = update_jax(network, Loss(train_params, sample_params), 0.01)
+        if backend == "jax":
+            update_method = update_jax(network, Loss(train_params, sample_params), 0.01)
 
         for i in range(z):
             input = np.log10(np.clip(np.asarray(X[i : i + 1])[:, :, :m, :n], 1, None))
@@ -337,10 +344,10 @@ class DeStripe:
                 input = input.transpose(0, 1, 3, 2)
                 mask_slice = mask_slice.transpose(0, 1, 3, 2)
                 fusion_mask_slice = fusion_mask_slice.tranpose(0, 1, 3, 2)
-
-            input = jnp.asarray(input)
-            mask_slice = jnp.asarray(mask_slice)
-            fusion_mask_slice = jnp.asarray(fusion_mask_slice)
+            if backend == "jax":
+                input = jnp.asarray(input)
+                mask_slice = jnp.asarray(mask_slice)
+                fusion_mask_slice = jnp.asarray(fusion_mask_slice)
 
             Y, dualtarget = DeStripe.train_on_one_slice(
                 network,

@@ -18,6 +18,7 @@ def image_resize(
     c,
     m,
     n,
+    backend,
 ):
     return jax.image.resize(
         x,
@@ -151,6 +152,7 @@ def prepare_aux(
     deg: float = 29,
     Nneighbors: int = 16,
     NI_all=None,
+    backend="jax",
 ):
     """
     the function preparing auxillary variables for training based on image shape
@@ -219,6 +221,7 @@ def generate_mask_dict(
     p_hessian,
     train_params,
     sample_params,
+    backend,
 ):
     r = train_params["max_pool_kernel_size"]
     md, nd = dualtargetd.shape[-2:]
@@ -408,9 +411,14 @@ def initialize_cmplx_model(
     network,
     key,
     dummy_input,
+    backend,
 ):
-    net_params = network.init(key, **dummy_input)
-    return net_params
+    if backend == "jax":
+        net_params = network.init(key, **dummy_input)
+        return net_params
+    else:
+        net_params = network.parameters()
+        return net_params
 
 
 class update_jax:

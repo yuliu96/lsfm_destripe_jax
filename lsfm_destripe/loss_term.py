@@ -436,10 +436,6 @@ class Loss:
             jnp.abs(targets - outputGNNraw_original) * mask_dict["mse_mask"]
         )
 
-        # outputGNNraw_original = jnp.concatenate(
-        #     (outputGNNraw_original, outputGNNraw),
-        #     0,
-        # )
         outputGNNraw_original_f = jax.image.resize(
             outputGNNraw_original,
             (
