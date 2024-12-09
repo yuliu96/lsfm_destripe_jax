@@ -4,11 +4,12 @@ from typing import Union, Dict
 import copy
 import jax.numpy as jnp
 from lsfm_destripe.utils_jax import (
-    transform_cmplx_haiku_model,
-    initialize_cmplx_haiku_model,
+    transform_cmplx_model,
+    initialize_cmplx_model,
     update_jax,
     generate_mask_dict,
     prepare_aux,
+    image_resize,
 )
 import tqdm
 import dask.array as da
@@ -95,7 +96,11 @@ class DeStripe:
         )
 
         # Xd = X[:, :, :: sample_params["r"], :]
-        Xd = jax.image.resize(X, (1, 1, md, nd), method="lanczos5")
+        Xd = image_resize(
+            X,
+            md,
+            nd,
+        )
         fusion_maskd = fusion_mask[:, :, :: sample_params["r"], :]
 
         # to Fourier
@@ -107,7 +112,7 @@ class DeStripe:
 
         # initialize
         aver = Xd.sum((2, 3))
-        net_params = initialize_cmplx_haiku_model(
+        net_params = initialize_cmplx_model(
             network,
             rng_seq,
             {
@@ -131,12 +136,12 @@ class DeStripe:
             train_params,
             sample_params,
         )
-
-        targets_f = jax.image.resize(
+        targets_f = image_resize(
             Xd,
-            (1, 1, md, nd // sample_params["r"]),
-            method="lanczos5",
+            md,
+            nd // sample_params["r"],
         )
+
         mask_dict.update(
             {
                 "mse_mask": mask[:, :, :: sample_params["r"], :],
@@ -274,7 +279,7 @@ class DeStripe:
             ry=3,
         )
 
-        network = transform_cmplx_haiku_model(
+        network = transform_cmplx_model(
             model=DeStripeModel,
             inc=train_params["inc"],
             m_l=(

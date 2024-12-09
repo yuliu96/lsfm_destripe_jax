@@ -5,6 +5,7 @@ import jax
 import numpy as np
 import scipy
 from lsfm_destripe.utils import crop_center
+from lsfm_destripe.utils_jax import image_resize
 
 
 def wave_rec(
@@ -94,9 +95,18 @@ class GuidedFilterHR_fast:
     def __call__(
         self, xx, yy, hX, fusion_mask, angle_offset_individual, fidelity_first
     ):
+        m, n = hXX.shape[-2:]
         hXX = copy.deepcopy(hX)
-        hX = jax.image.resize(xx, hXX.shape, method="lanczos5")
-        recon = jax.image.resize(yy, hXX.shape, method="lanczos5")
+        hX = image_resize(
+            xx,
+            m,
+            n,
+        )
+        recon = image_resize(
+            yy,
+            m,
+            n,
+        )
         recon = wave_rec(
             recon,
             hXX,

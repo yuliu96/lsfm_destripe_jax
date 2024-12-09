@@ -12,6 +12,18 @@ from typing import List
 from lsfm_destripe.utils import crop_center
 
 
+def image_resize(
+    x,
+    m,
+    n,
+):
+    return jax.image.resize(
+        x,
+        (1, 1, m, n),
+        method="lanczos5",
+    )
+
+
 def NeighborSampling(
     m,
     n,
@@ -390,7 +402,7 @@ def cADAM(
     return init, update, get_params
 
 
-def transform_cmplx_haiku_model(
+def transform_cmplx_model(
     model,
     **model_kwargs,
 ):
@@ -402,7 +414,7 @@ def transform_cmplx_haiku_model(
     return network
 
 
-def initialize_cmplx_haiku_model(
+def initialize_cmplx_model(
     network,
     key,
     dummy_input,
