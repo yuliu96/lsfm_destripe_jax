@@ -412,9 +412,9 @@ class Loss:
         targets_f,
     ):
         outputGNNraw_original = network.apply(params, **inputs)
-        outputGNNraw_original = jnp.clip(
-            outputGNNraw_original, targets.min(), targets.max()
-        )
+        # outputGNNraw_original = jnp.clip(
+        #     outputGNNraw_original, targets.min(), targets.max()
+        # )
         outputGNNraw_original_pad = jnp.pad(
             targets - outputGNNraw_original,
             ((0, 0), (0, 0), (0, 0), (self.GF_pad // 2, self.GF_pad // 2)),
