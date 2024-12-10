@@ -343,7 +343,7 @@ class DeStripe:
             if not sample_params["is_vertical"]:
                 input = input.transpose(0, 1, 3, 2)
                 mask_slice = mask_slice.transpose(0, 1, 3, 2)
-                fusion_mask_slice = fusion_mask_slice.tranpose(0, 1, 3, 2)
+                fusion_mask_slice = fusion_mask_slice.transpose(0, 1, 3, 2)
             if backend == "jax":
                 input = jnp.asarray(input)
                 mask_slice = jnp.asarray(mask_slice)
