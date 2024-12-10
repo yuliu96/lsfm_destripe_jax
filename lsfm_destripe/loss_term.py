@@ -432,6 +432,7 @@ class Loss:
                     mask_dict["ind"],
                 ]
             )
+            ** 2
         ) + self.lambda_masking_mse * jnp.sum(
             jnp.abs(targets - outputGNNraw_original) * mask_dict["mse_mask"]
         )
