@@ -4,9 +4,10 @@ import math
 import jax
 from jax import jit
 from functools import partial
+import jaxwt
 
 
-class Loss:
+class Loss_jax:
     def __init__(
         self,
         train_params,
@@ -411,10 +412,19 @@ class Loss:
         hy,
         targets_f,
     ):
-        outputGNNraw_original = network.apply(params, **inputs)
-        # outputGNNraw_original = jnp.clip(
-        #     outputGNNraw_original, targets.min(), targets.max()
-        # )
+        outputGNNraw_original, output_att = network.apply(params, **inputs)
+        outputGNNraw_full = (
+            jax.scipy.ndimage.map_coordinates(
+                outputGNNraw_original - targets,
+                mask_dict["coor"],
+                order=1,
+                mode="reflect",
+            )[None, None]
+            + hy
+        )
+        outputGNNraw = jax.image.resize(
+            outputGNNraw_full, targets.shape, method="bilinear"
+        )
         outputGNNraw_original_pad = jnp.pad(
             targets - outputGNNraw_original,
             ((0, 0), (0, 0), (0, 0), (self.GF_pad // 2, self.GF_pad // 2)),
@@ -436,19 +446,51 @@ class Loss:
             jnp.abs(targets - outputGNNraw_original) * mask_dict["mse_mask"]
         )
 
+        output_att_dict = [jaxwt.wavedec2(output_att, "db4", level=1, mode="reflect")]
+        l = 6
+        for _ in range(l - 1):
+            output_att_dict.append(
+                jaxwt.wavedec2(output_att_dict[-1][0], "db4", level=1, mode="reflect")
+            )
+
+        output_gnn_hr_dict = [
+            jaxwt.wavedec2(outputGNNraw_full, "db4", level=1, mode="reflect")
+        ]
+        for _ in range(l - 1):
+            output_gnn_hr_dict.append(
+                jaxwt.wavedec2(
+                    output_gnn_hr_dict[-1][0], "db4", level=1, mode="reflect"
+                )
+            )
+
+        for i in range(l):
+            mse = mse + 20 * jnp.sum(
+                jnp.abs(output_att_dict[i][1][0] - output_gnn_hr_dict[i][1][0])
+            )
+            mse = mse + 20 * jnp.sum(
+                jnp.abs(output_att_dict[i][1][1] - output_gnn_hr_dict[i][1][1])
+            )
+            mse = mse + 40 * jnp.sum(
+                jnp.abs(output_att_dict[i][1][2] - output_gnn_hr_dict[i][1][2])
+            )
+
+        outputGNNraw_original = jnp.concatenate(
+            (outputGNNraw_original, outputGNNraw), 0
+        )
+
         outputGNNraw_original_f = jax.image.resize(
             outputGNNraw_original,
             (
-                1,
+                2,
                 1,
                 m,
                 n // self.r,
             ),
-            method="lanczos5",
+            method="bilinear",
         )
 
         tv = self.total_variation_cal(
-            outputGNNraw_original,
+            outputGNNraw_original[1:2],
             targets,
             self.Dx,
             self.Dy,
@@ -457,7 +499,7 @@ class Loss:
         )
 
         tv = tv + self.total_variation_cal(
-            outputGNNraw_original_f,
+            outputGNNraw_original_f[1:2],
             targets_f,
             self.Dx_f,
             self.Dy_f,
@@ -466,7 +508,7 @@ class Loss:
         )
 
         hessian = self.HessianRegularizationLoss(
-            outputGNNraw_original,
+            outputGNNraw_original[1:2],
             targets,
             self.DGaussxx,
             self.DGaussyy,
@@ -476,7 +518,7 @@ class Loss:
         )
 
         hessian = hessian + self.hessian_cal(
-            outputGNNraw_original_f,
+            outputGNNraw_original_f[1:2],
             targets_f,
             self.DGaussxx_f,
             self.DGaussyy_f,
