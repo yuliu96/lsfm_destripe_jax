@@ -2,12 +2,8 @@ import haiku as hk
 import numpy as np
 import jax.numpy as jnp
 import jax
-import math
-from scipy import ndimage
-from jax import random
-from jax import jit
-from functools import partial
 from lsfm_destripe.utils_jax import generate_mapping_coordinates
+import copy
 
 
 class Cmplx_Xavier_Init(hk.initializers.Initializer):
@@ -94,7 +90,7 @@ class CLinear(hk.Module):
         return jnp.dot(inputs, w) + b
 
 
-def complexReLU(x):
+def complex_relu(x):
     return jax.lax.complex(jax.nn.elu(x.real), jax.nn.elu(x.imag))
 
 
@@ -110,22 +106,8 @@ class ResLearning(hk.Module):
         self,
         x,
     ):
-        inx = CLinear(self.outc)(complexReLU(CLinear(self.outc)(x)))
-        return complexReLU(inx + CLinear(self.outc)(x))
-
-
-class dual_view_fusion:
-    def __init__(
-        self,
-    ):
-        pass
-
-    def __call__(
-        self,
-        x,
-        boundary,
-    ):
-        return (x * boundary).sum(1, keepdims=True)
+        inx = CLinear(self.outc)(complex_relu(CLinear(self.outc)(x)))
+        return complex_relu(inx + CLinear(self.outc)(x))
 
 
 class identical_func:
@@ -147,14 +129,15 @@ class gnn(hk.Module):
         inc,
     ):
         super().__init__()
-        self.NI, self.hier_mask, self.hier_ind = NI, hier_mask, hier_ind
+        self.NI = NI
+        self.hier_mask = hier_mask
+        self.hier_ind = hier_ind
         self.inc = inc
 
     def __call__(
         self,
         Xf,
     ):
-        # return Xf
         w = hk.get_parameter(
             "w",
             (self.NI.shape[0], self.NI.shape[1]),
@@ -208,15 +191,15 @@ class tv_uint(hk.Module):
             self.latentProcess,
         ):
             X_fourier.append(
-                complexReLU(
+                complex_relu(
                     latentProcess(
-                        complexReLU(edgeProcess(x) * inverseTVfftx)
-                        + complexReLU(edgeProcess(y) * inverseTVffty)
+                        complex_relu(edgeProcess(x) * inverseTVfftx)
+                        + complex_relu(edgeProcess(y) * inverseTVffty)
                     )
                     / eigDtD
                 )
             )
-        return sum(X_fourier)  # self.merge(jnp.concatenate(X_fourier, -1))
+        return jnp.concatenate(X_fourier, -1)
 
 
 class non_positive_unit:
@@ -229,7 +212,66 @@ class non_positive_unit:
         return jnp.abs(x - target) + target
 
 
-class DeStripeModel(hk.Module):
+class GuidedFilterJAX(hk.Module):
+    def __init__(self, rx, ry, r, Angle, m=None, n=None, eps=1e-9):
+        super().__init__()
+        Angle = np.rad2deg(np.arctan(r * np.tan(np.deg2rad(Angle))))
+        self.kernelL = []
+        for A in Angle:
+            l = np.arange(rx) - rx // 2
+            l = np.round(l * np.tan(np.deg2rad(A))).astype(np.int32)
+            ry = (l.max() - l.min()) // 2 * 2 + 1
+            i, j = jnp.meshgrid(jnp.arange(ry), jnp.arange(rx))
+            i = i - ry // 2
+            j = j - rx // 2
+            kernel = (i == l[:, None]).astype(jnp.float32)[None, None]
+
+            self.kernelL.append(kernel)
+        self.AngleNum = len(Angle)
+        self.Angle = Angle
+
+        self.pr = [self.kernelL[i].shape[-1] // 2 for i in range(self.AngleNum)]
+        self.pc = [self.kernelL[i].shape[-2] // 2 for i in range(self.AngleNum)]
+
+        XN = jnp.ones((1, 1, m, n))
+        self.N = [
+            self.boxfilter(XN, self.kernelL[i], self.pc[i], self.pr[i])
+            for i in range(self.AngleNum)
+        ]
+
+    def boxfilter(self, x, k, pc, pr):
+        return jax.lax.conv_general_dilated(
+            jnp.pad(
+                x,
+                ((0, 0), (0, 0), (pc, pc), (pr, pr)),
+                mode="constant",
+                constant_values=0,
+            ),
+            k,
+            (1, 1),
+            "VALID",
+            feature_group_count=x.shape[1],
+        )
+
+    def __call__(self, X, y, hX, coor):
+        X0 = copy.deepcopy(X)
+        for i in range(self.AngleNum):
+            b = (
+                self.boxfilter(y - X, self.kernelL[i], self.pc[i], self.pr[i])
+                / self.N[i]
+            )
+            b = self.boxfilter(b, self.kernelL[i], self.pc[i], self.pr[i]) / self.N[i]
+            X = X + b
+        hX = (
+            jax.scipy.ndimage.map_coordinates(X - X0, coor, order=1, mode="reflect")[
+                None, None
+            ]
+            + hX
+        )
+        return hX
+
+
+class DeStripeModel_jax(hk.Module):
     def __init__(
         self,
         Angle,
@@ -304,20 +346,20 @@ class DeStripeModel(hk.Module):
         self.edgeProcess = []
         for _ in Angle:
             self.edgeProcess.append(
-                hk.Sequential([CLinear(inc), complexReLU, CLinear(inc)])
+                hk.Sequential([CLinear(inc), complex_relu, CLinear(inc)])
             )
         self.latentProcess = []
         for _ in Angle:
             self.latentProcess.append(
-                hk.Sequential([CLinear(inc), complexReLU, CLinear(inc)])
+                hk.Sequential([CLinear(inc), complex_relu, CLinear(inc)])
             )
         self.ainput = jnp.ones((1, 1))
         self.merge = hk.Sequential(
             [
                 CLinear(inc),
-                complexReLU,
+                complex_relu,
                 CLinear(inc),
-                complexReLU,
+                complex_relu,
                 CLinear(1),
             ]
         )
@@ -336,6 +378,23 @@ class DeStripeModel(hk.Module):
 
         self.non_positive_unit = (
             non_positive_unit() if non_positive else identical_func()
+        )
+        self.GuidedFilter = GuidedFilterJAX(
+            rx=49,
+            ry=3,
+            r=r,
+            m=self.m_l,
+            n=self.n_l,
+            Angle=Angle,
+        )
+        self.basep = hk.Sequential(
+            [
+                hk.Linear(inc),
+                jax.nn.elu,
+                hk.Linear(inc),
+                jax.nn.elu,
+                hk.Linear(1),
+            ]
         )
 
     def fftnt(
@@ -382,6 +441,8 @@ class DeStripeModel(hk.Module):
         aver,
         Xf,
         target,
+        target_hr,
+        coor,
     ):
         Xf = self.p(Xf)  # (M*N, 2,)
         Xf_tvx = self.gnn(Xf)
@@ -395,4 +456,5 @@ class DeStripeModel(hk.Module):
         )
         outputGNNraw = outputGNNraw + alpha
         outputGNNraw = self.non_positive_unit(outputGNNraw, target)
-        return outputGNNraw
+        outputLR = self.GuidedFilter(target, outputGNNraw, target_hr, coor)
+        return outputGNNraw, outputLR
