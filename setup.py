@@ -49,6 +49,7 @@ requirements = [
     "dm-haiku",
     "SimpleITK",
     "jaxwt",
+    "ptwt",
 ]
 
 extra_requirements = {
