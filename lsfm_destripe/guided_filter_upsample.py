@@ -5,6 +5,7 @@ import jax
 import numpy as np
 import scipy
 from lsfm_destripe.utils import crop_center
+from lsfm_destripe.constant import WaveletDetailTuple2d
 
 
 def wave_rec(
