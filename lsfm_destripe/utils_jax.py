@@ -12,21 +12,6 @@ from typing import List
 from lsfm_destripe.utils import crop_center
 
 
-def image_resize(
-    x,
-    b,
-    c,
-    m,
-    n,
-    backend,
-):
-    return jax.image.resize(
-        x,
-        (b, c, m, n),
-        method="lanczos5",
-    )
-
-
 def NeighborSampling(
     m,
     n,
@@ -444,6 +429,7 @@ class update_jax:
         mask_dict,
         hy,
         targets_f,
+        targetd_bilinear,
     ):
         (l, A), grads = value_and_grad(self.loss, has_aux=True)(
             params,
@@ -452,8 +438,10 @@ class update_jax:
                 "aver": aver,
                 "Xf": xf,
                 "target": y,
+                "target_hr": hy,
+                "coor": mask_dict["coor"],
             },
-            y,
+            targetd_bilinear,
             mask_dict,
             hy,
             targets_f,
