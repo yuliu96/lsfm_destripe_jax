@@ -22,7 +22,7 @@ from lsfm_destripe.utils import (
     transform_cmplx_model,
 )
 import matplotlib.pyplot as plt
-from lsfm_destripe.network import DeStripeModel
+from lsfm_destripe.network_jax import DeStripeModel_jax
 from lsfm_destripe.guided_filter_upsample import GuidedFilterHR_fast
 import dask.array as da
 from aicsimageio import AICSImage
