@@ -12,7 +12,6 @@ from lsfm_destripe.utils_jax import (
     update_jax,
     generate_mask_dict,
     prepare_aux,
-    image_resize,
 )
 import tqdm
 import dask.array as da
@@ -26,7 +25,7 @@ from lsfm_destripe.network_jax import DeStripeModel_jax
 from lsfm_destripe.guided_filter_upsample import GuidedFilterHR_fast
 import dask.array as da
 from aicsimageio import AICSImage
-from lsfm_destripe.loss_term import Loss
+from lsfm_destripe.loss_term_jax import Loss_jax
 import torch
 
 
