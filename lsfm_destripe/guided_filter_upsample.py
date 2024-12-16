@@ -19,10 +19,10 @@ def wave_rec(
     m, n = recon.shape[-2:]
 
     y_dict = ptwt.wavedec2(
-        recon[:, :, :-1, :-1], pywt.Wavelet(kernel), level=6, mode="reflect"
+        recon[:, :, :-1, :-1], pywt.Wavelet(kernel), level=6, mode="constant"
     )
     X_dict = ptwt.wavedec2(
-        hX[:, :, :-1, :-1], pywt.Wavelet(kernel), level=6, mode="reflect"
+        hX[:, :, :-1, :-1], pywt.Wavelet(kernel), level=6, mode="constant"
     )
     x_base_dict = [y_dict[0]]
 
