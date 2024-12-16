@@ -50,6 +50,7 @@ requirements = [
     "SimpleITK",
     "jaxwt",
     "ptwt",
+    "pywt",
 ]
 
 extra_requirements = {

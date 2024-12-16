@@ -22,7 +22,7 @@ from lsfm_destripe.utils import (
 )
 import matplotlib.pyplot as plt
 from lsfm_destripe.network_jax import DeStripeModel_jax
-from lsfm_destripe.guided_filter_upsample import GuidedFilterHR_fast
+from lsfm_destripe.guided_filter_upsample import GuidedUpsample
 import dask.array as da
 from aicsimageio import AICSImage
 from lsfm_destripe.loss_term_jax import Loss_jax
@@ -33,7 +33,9 @@ class DeStripe:
     def __init__(
         self,
         resample_ratio: int = 3,
-        gf_kernel_size: int = 29,
+        guided_upsample_kernel_length: int = 29,
+        guided_upsample_kernel_width: int = 3,
+        guided_upsample_mode: str = "high_fidelity",
         hessian_kernel_sigma: float = 1,
         lambda_masking_mse: int = 1,
         lambda_tv: float = 1,
@@ -45,13 +47,14 @@ class DeStripe:
         n_neighbors: int = 16,
         require_global_correction: bool = True,
         fusion_kernel_size: int = 49,
-        fidelity_first: bool = False,
         backend: str = "jax",
         device: str = None,
     ):
         self.train_params = {
+            "gf_kernel_size_in_y": guided_upsample_kernel_width,
             "fast_mode": fast_mode,
-            "gf_kernel_size": gf_kernel_size,
+            "gf_kernel_size": guided_upsample_kernel_length,
+            "gf_mode": 1 if guided_upsample_mode == "high_fidelity" else 2,
             "n_neighbors": n_neighbors,
             "inc": inc,
             "hessian_kernel_sigma": hessian_kernel_sigma,
@@ -63,15 +66,9 @@ class DeStripe:
             "wedge_degree": wedge_degree,
             "fusion_kernel_size": fusion_kernel_size,
             "require_global_correction": require_global_correction,
-            "fidelity_first": fidelity_first,
         }
-        if backend == "torch":
-            if device is None:
-                self.device = torch.device(
-                    "cuda" if torch.cuda.is_available() else "cpu"
-                )
-            else:
-                self.device = device
+        if device is None:
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         else:
             self.device = device
         self.backend = backend
@@ -99,23 +96,9 @@ class DeStripe:
         )
 
         target = (X * fusion_mask).sum(1, keepdims=True)
-        targetd = image_resize(
-            target,
-            1,
-            1,
-            md,
-            nd,
-            backend=backend,
-        )
 
-        Xd = image_resize(
-            X,
-            1,
-            X.shape[1],
-            md,
-            nd,
-            backend=backend,
-        )
+        targetd = target[:, :, :: sample_params["r"], :]
+        Xd = X[:, :, :: sample_params["r"], :]
         fusion_maskd = fusion_mask[:, :, :: sample_params["r"], :]
 
         # to Fourier
@@ -127,22 +110,9 @@ class DeStripe:
             )
 
         # initialize
-        aver = targetd.sum((2, 3))
-        net_params = initialize_cmplx_model(
-            network,
-            rng_seq,
-            {
-                "aver": aver,
-                "Xf": targetf,
-                "target": targetd,
-            },
-            backend=backend,
-        )
-
-        opt_state = update_method.opt_init(net_params)
-
-        mask_dict = generate_mask_dict(
+        mask_dict, targets_f, targetd_bilinear = generate_mask_dict(
             targetd,
+            target,
             fusion_maskd,
             update_method.loss.Dx,
             update_method.loss.Dy,
@@ -154,14 +124,21 @@ class DeStripe:
             sample_params,
             backend=backend,
         )
-        targets_f = image_resize(
-            targetd,
-            1,
-            1,
-            md,
-            nd // sample_params["r"],
+        aver = targetd.sum((2, 3))
+        net_params = initialize_cmplx_model(
+            network,
+            rng_seq,
+            {
+                "aver": aver,
+                "Xf": targetf,
+                "target": targetd,
+                "target_hr": target,
+                "coor": mask_dict["coor"],
+            },
             backend=backend,
         )
+
+        opt_state = update_method.opt_init(net_params)
 
         mask_dict.update(
             {
@@ -184,17 +161,20 @@ class DeStripe:
                 mask_dict,
                 target,
                 targets_f,
+                targetd_bilinear,
             )
         Y = GuidedFilterHRModel(
             Xd,
             Y_raw,
             X,
+            targetd,
+            target,
+            mask_dict["coor"],
             fusion_mask,
             sample_params["angle_offset_individual"],
-            train_params["fidelity_first"],
             backend=backend,
         )
-        return Y[0, 0], 10 ** np.asarray(target[0, 0])
+        return Y[0, 0], 10 ** np.asarray(target[0, 0]) if backend == "jax" else None
 
     @staticmethod
     def train_on_full_arr(
@@ -293,13 +273,16 @@ class DeStripe:
                 ax[i].plot(p0, p1, "r")
             ax[i].axis("off")
         plt.show()
-        GuidedFilterHRModel = GuidedFilterHR_fast(
+
+        GuidedFilterHRModel = GuidedUpsample(
             rx=train_params["gf_kernel_size"],
-            ry=3,
+            ry=train_params["gf_kernel_size_in_y"],
+            mode=train_params["gf_mode"],
+            device=device,
         )
 
         network = transform_cmplx_model(
-            model=DeStripeModel,
+            model=DeStripeModel_jax,
             inc=train_params["inc"],
             m_l=(
                 sample_params["md"]
@@ -329,7 +312,9 @@ class DeStripe:
             }
         )
         if backend == "jax":
-            update_method = update_jax(network, Loss(train_params, sample_params), 0.01)
+            update_method = update_jax(
+                network, Loss_jax(train_params, sample_params), 0.01
+            )
 
         for i in range(z):
             input = np.log10(np.clip(np.asarray(X[i : i + 1])[:, :, :m, :n], 1, None))
@@ -348,7 +333,7 @@ class DeStripe:
                 mask_slice = jnp.asarray(mask_slice)
                 fusion_mask_slice = jnp.asarray(fusion_mask_slice)
 
-            Y, dualtarget = DeStripe.train_on_one_slice(
+            Y, target = DeStripe.train_on_one_slice(
                 network,
                 GuidedFilterHRModel,
                 update_method,
@@ -361,10 +346,11 @@ class DeStripe:
                 z,
                 backend=backend,
             )
+
             if not sample_params["is_vertical"]:
                 Y = Y.T
-                dualtarget = dualtarget.T
-            # Y = np.clip(Y, 0, 65535)
+                target = target.T
+
             if display:
                 plt.figure(dpi=300)
                 ax = plt.subplot(1, 2, 2)
@@ -372,7 +358,7 @@ class DeStripe:
                 ax.set_title("output", fontsize=8, pad=1)
                 plt.axis("off")
                 ax = plt.subplot(1, 2, 1)
-                plt.imshow(dualtarget, vmin=Y.min(), vmax=Y.max(), cmap="gray")
+                plt.imshow(target, vmin=Y.min(), vmax=Y.max(), cmap="gray")
                 ax.set_title("input", fontsize=8, pad=1)
                 plt.axis("off")
                 plt.show()
@@ -380,6 +366,7 @@ class DeStripe:
                 np.uint16
             )
             mean[i] = np.mean(result[i] + 0.1)
+
         if train_params["require_global_correction"] and (z != 1):
             print("global correcting...")
             result = global_correction(mean, result)

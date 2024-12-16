@@ -58,6 +58,7 @@ def destripe_train_params(
     require_global_correction: bool = True,
     fast_mode: bool = False,
     gf_kernel_size_in_y: int = 3,
+    gf_mode: int = 1,
 ):
     kwargs = locals()
     return kwargs
