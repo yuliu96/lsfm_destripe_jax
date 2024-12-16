@@ -196,7 +196,8 @@ def prepare_aux(
 
 
 def generate_mask_dict(
-    dualtargetd,
+    y,
+    hy,
     fusion_mask,
     Dx,
     Dy,
@@ -209,24 +210,22 @@ def generate_mask_dict(
     backend,
 ):
     r = train_params["max_pool_kernel_size"]
-    md, nd = dualtargetd.shape[-2:]
-    dualtargetd_pad = jnp.pad(
-        dualtargetd, ((0, 0), (0, 0), (0, 0), (r // 2, r // 2)), "reflect"
+    md, nd = y.shape[-2:]
+    y_pad = jnp.pad(y, ((0, 0), (0, 0), (0, 0), (r // 2, r // 2)), "reflect")
+    ind = jax.lax.conv_general_dilated_patches(y_pad, (1, r), (1, 1), "VALID").argmax(
+        axis=1, keepdims=True
     )
-    ind = jax.lax.conv_general_dilated_patches(
-        dualtargetd_pad, (1, r), (1, 1), "VALID"
-    ).argmax(axis=1, keepdims=True)
     ind = ind + jnp.arange(nd)[None, None, None, :]
     mask_tv = (
         jnp.arctan2(
             jnp.abs(
                 jax.lax.conv_general_dilated(
-                    jnp.pad(dualtargetd, p_tv, "reflect"), Dx, (1, 1), "VALID"
+                    jnp.pad(y, p_tv, "reflect"), Dx, (1, 1), "VALID"
                 )
             ),
             jnp.abs(
                 jax.lax.conv_general_dilated(
-                    jnp.pad(dualtargetd, p_tv, "reflect"), Dy, (1, 1), "VALID"
+                    jnp.pad(y, p_tv, "reflect"), Dy, (1, 1), "VALID"
                 )
             ),
         )
@@ -237,7 +236,7 @@ def generate_mask_dict(
         jnp.arctan2(
             jnp.abs(
                 jax.lax.conv_general_dilated(
-                    jnp.pad(dualtargetd, p_hessian, "reflect"),
+                    jnp.pad(y, p_hessian, "reflect"),
                     DGaussxx,
                     (1, 1),
                     "VALID",
@@ -245,7 +244,7 @@ def generate_mask_dict(
             ),
             jnp.abs(
                 jax.lax.conv_general_dilated(
-                    jnp.pad(dualtargetd, p_hessian, "reflect"),
+                    jnp.pad(y, p_hessian, "reflect"),
                     DGaussyy,
                     (1, 1),
                     "VALID",
@@ -284,7 +283,7 @@ def generate_mask_dict(
     mask_hessian_f = []
     for data_ind in mask_hessian_f_split:
         mask_hessian_f.append(
-            jnp.mean(mask_hessian[:, data_ind, :, :], 1, keepdims=True)
+            jnp.max(mask_hessian[:, data_ind, :, :], 1, keepdims=True)
         )
     mask_hessian_f = jnp.concatenate(mask_hessian_f, 1)
     mask_hessian_f = -hk.max_pool(
@@ -300,18 +299,41 @@ def generate_mask_dict(
 
     ind_hessian = jnp.argmax(mask_hessian, axis=1, keepdims=True)
     mask_hessian = jnp.max(mask_hessian, axis=1, keepdims=True)
+
+    mask_tv = hk.max_pool(mask_tv, [Dx.shape[-2], Dx.shape[-1]], [1, 1], "SAME")
+    mask_hessian = hk.max_pool(
+        mask_hessian, [DGaussxx.shape[-2], DGaussxx.shape[-2]], [1, 1], "SAME"
+    )
+
+    mask_tv_f = hk.max_pool(mask_tv_f, [Dx.shape[-2], Dx.shape[-1]], [1, 1], "SAME")
+    mask_hessian_f = hk.max_pool(
+        mask_hessian_f, [DGaussxx.shape[-2], DGaussxx.shape[-2]], [1, 1], "SAME"
+    )
+
+    t = jnp.linspace(0, y.shape[-2] - 1, (y.shape[-2] - 1) * sample_params["r"] + 1)
+    t = jnp.concatenate((t, t[1 : sample_params["r"]] + t[-1]))
+    coor = jnp.zeros((4, hy.shape[-2], hy.shape[-1]))
+    coor = coor.at[2, :, :].set(t[:, None])
+    coor = coor.at[3, :, :].set(jnp.arange(hy.shape[-1])[None, :])
+
+    targetd_bilinear = jax.image.resize(hy, y.shape, method="bilinear")
+    targets_f = jax.image.resize(
+        targetd_bilinear, (1, 1, md, nd // sample_params["r"]), "bilinear"
+    )
+
     mask_dict = {
         "mask_tv": mask_tv,
         "mask_hessian": mask_hessian,
-        "mask_hessian_f": mask_hessian_f,  # jnp.where(mask_hessian_f>1, mask_hessian_f, 0),
-        "mask_tv_f": mask_tv_f,  # jnp.where(mask_tv_f>1, mask_tv_f, 0),
+        "mask_hessian_f": mask_hessian_f,
+        "mask_tv_f": mask_tv_f,
         "ind": ind,
         "ind_tv": ind_tv,
         "ind_hessian": ind_hessian,
         "ind_hessian_f": ind_hessian_f,
         "ind_tv_f": ind_tv_f,
+        "coor": coor,
     }
-    return mask_dict
+    return mask_dict, targets_f, targetd_bilinear
 
 
 def generate_mapping_matrix(
