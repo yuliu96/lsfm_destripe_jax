@@ -41,18 +41,14 @@ class DeStripe:
         lambda_tv: float = 1,
         lambda_hessian: float = 1,
         inc: int = 16,
-        fast_mode: bool = False,
         n_epochs: int = 300,
         wedge_degree: float = 29,
         n_neighbors: int = 16,
-        require_global_correction: bool = True,
-        fusion_kernel_size: int = 49,
         backend: str = "jax",
         device: str = None,
     ):
         self.train_params = {
             "gf_kernel_size_in_y": guided_upsample_kernel_width,
-            "fast_mode": fast_mode,
             "gf_kernel_size": guided_upsample_kernel_length,
             "gf_mode": 1 if guided_upsample_mode == "high fidelity" else 2,
             "n_neighbors": n_neighbors,
@@ -64,8 +60,6 @@ class DeStripe:
             "resample_ratio": resample_ratio,
             "n_epochs": n_epochs,
             "wedge_degree": wedge_degree,
-            "fusion_kernel_size": fusion_kernel_size,
-            "require_global_correction": require_global_correction,
         }
         if device is None:
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -244,7 +238,6 @@ class DeStripe:
         hier_mask_arr, hier_ind_arr, NI_arr, _ = prepare_aux(
             sample_params["md"],
             sample_params["nd"],
-            train_params["fast_mode"],
             sample_params["is_vertical"],
             np.rad2deg(
                 np.arctan(r * np.tan(np.deg2rad(sample_params["angle_offset"])))
@@ -367,7 +360,7 @@ class DeStripe:
             )
             mean[i] = np.mean(result[i] + 0.1)
 
-        if train_params["require_global_correction"] and (z != 1):
+        if z != 1:
             print("global correcting...")
             result = global_correction(mean, result)
         print("Done")

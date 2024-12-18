@@ -70,7 +70,6 @@ def WedgeMask(
     nd,
     Angle,
     deg,
-    fast_mode,
 ):
     """
     Add docstring here
@@ -103,35 +102,20 @@ def WedgeMask(
     tmp = jnp.hstack((jnp.flip(tmp[:, 1:], 1), tmp))
     tmp = jnp.vstack((jnp.flip(tmp[1:, :], 0), tmp))
     b = tmp[md - md // 2 : md + md // 2 + 1, nd - nd // 2 : nd + nd // 2 + 1]
-    bb = (
-        jnp.abs(jnp.arange(nd) - nd // 2)[None, :] > nd // 4 * jnp.ones(md)[:, None]
-    ).astype(jnp.int32)
-    if fast_mode:
-        return crop_center(
-            (
-                ((a < math.pi / 180 * (90 - deg)).astype(jnp.int32) + bb)
-                * (b > 1024).astype(jnp.int32)
-            )
-            != 0,
-            md_o,
-            nd_o,
+    return crop_center(
+        (
+            ((a < math.pi / 180 * (90 - deg)).astype(jnp.int32))
+            * (b > 1024).astype(jnp.int32)
         )
-    else:
-        return crop_center(
-            (
-                ((a < math.pi / 180 * (90 - deg)).astype(jnp.int32))
-                * (b > 1024).astype(jnp.int32)
-            )
-            != 0,
-            md_o,
-            nd_o,
-        )
+        != 0,
+        md_o,
+        nd_o,
+    )
 
 
 def prepare_aux(
     md: int,
     nd: int,
-    fast_mode: bool,
     is_vertical: bool,
     angleOffset: List[float] = None,
     deg: float = 29,
@@ -176,7 +160,6 @@ def prepare_aux(
             nd,
             Angle=angle,
             deg=deg,
-            fast_mode=fast_mode,
         )
     angleMask = angleMask[None]
     angleMask = angleMask.reshape(angleMask.shape[0], -1)[:, : md * nd // 2]

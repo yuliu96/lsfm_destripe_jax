@@ -54,11 +54,9 @@ def destripe_train_params(
     n_epochs: int = 300,
     wedge_degree: float = 29,
     n_neighbors: int = 16,
-    fusion_kernel_size: int = 49,
-    require_global_correction: bool = True,
-    fast_mode: bool = False,
     gf_kernel_size_in_y: int = 3,
     gf_mode: int = 1,
+    backend: str = "jax",
 ):
     kwargs = locals()
     return kwargs
