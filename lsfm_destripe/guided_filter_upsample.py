@@ -16,7 +16,6 @@ def wave_rec(
     kernel,
     mode,
 ):
-    m, n = recon.shape[-2:]
 
     y_dict = ptwt.wavedec2(
         recon[:, :, :-1, :-1], pywt.Wavelet(kernel), level=6, mode="constant"
