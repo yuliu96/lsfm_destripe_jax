@@ -33,7 +33,7 @@ class DeStripe:
     def __init__(
         self,
         resample_ratio: int = 3,
-        guided_upsample_kernel_length: int = 29,
+        guided_upsample_kernel_length: int = 49,
         guided_upsample_kernel_width: int = 3,
         guided_upsample_mode: str = "high fidelity",
         hessian_kernel_sigma: float = 1,
