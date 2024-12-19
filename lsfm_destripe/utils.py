@@ -7,6 +7,7 @@ import jax
 import math
 import copy
 from lsfm_destripe.utils_jax import generate_mapping_coordinates
+import torch
 
 
 def transform_cmplx_model(
@@ -214,7 +215,6 @@ def prepare_aux(
     angleOffset: List[float] = None,
     deg: float = 29,
     Nneighbors: int = 16,
-    NI_all=None,
     backend="jax",
 ):
     if not is_vertical:
@@ -243,9 +243,15 @@ def prepare_aux(
             [dep_package.where(angleMask.reshape(-1) == index)[0] for index in range(2)]
         )
     )
-    if NI_all is None:
-        NI_all = NeighborSampling(md, nd, k_neighbor=Nneighbors, backend=backend)
+    NI_all = NeighborSampling(md, nd, k_neighbor=Nneighbors, backend=backend)
     NI = dep_package.concatenate(
         [NI_all[angle_mask == 0, :].T for angle_mask in angleMask], 1
     )  # 1 : Nneighbors + 1
-    return hier_mask, hier_ind, NI, NI_all
+    if backend == "jax":
+        return hier_mask, hier_ind, NI
+    else:
+        return (
+            torch.from_numpy(hier_mask),
+            torch.from_numpy(hier_ind),
+            torch.from_numpy(NI),
+        )
