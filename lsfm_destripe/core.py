@@ -35,7 +35,6 @@ class DeStripe:
         resample_ratio: int = 3,
         guided_upsample_kernel_length: int = 49,
         guided_upsample_kernel_width: int = 3,
-        guided_upsample_mode: str = "low fidelity",
         hessian_kernel_sigma: float = 1,
         lambda_masking_mse: int = 1,
         lambda_tv: float = 1,
@@ -50,7 +49,6 @@ class DeStripe:
         self.train_params = {
             "gf_kernel_size_in_y": guided_upsample_kernel_width,
             "gf_kernel_size": guided_upsample_kernel_length,
-            "gf_mode": 1 if guided_upsample_mode == "high fidelity" else 2,
             "n_neighbors": n_neighbors,
             "inc": inc,
             "hessian_kernel_sigma": hessian_kernel_sigma,
@@ -255,14 +253,16 @@ class DeStripe:
             ax[1].set_visible(False)
         for i in range(len(angle_offset_individual)):
             demo_img = X[z // 2, :, :, :]
-            if not sample_params["is_vertical"]:
-                demo_img = demo_img.swapaxes(2, 1)
             demo_m, demo_n = demo_img.shape[-2:]
+            if not sample_params["is_vertical"]:
+                (demo_m, demo_n) = (demo_n, demo_m)
             ax[i].imshow(demo_img[i, :].compute() + 1.0)
             for deg in sample_params["angle_offset_individual"][i]:
                 d = np.tan(np.deg2rad(deg)) * demo_m
                 p0 = [0 + demo_n // 2 - d // 2, d + demo_n // 2 - d // 2]
                 p1 = [0, demo_m - 1]
+                if not sample_params["is_vertical"]:
+                    (p0, p1) = (p1, p0)
                 ax[i].plot(p0, p1, "r")
             ax[i].axis("off")
         plt.show()
@@ -270,7 +270,6 @@ class DeStripe:
         GuidedFilterHRModel = GuidedUpsample(
             rx=train_params["gf_kernel_size"],
             ry=train_params["gf_kernel_size_in_y"],
-            mode=train_params["gf_mode"],
             device=device,
         )
 

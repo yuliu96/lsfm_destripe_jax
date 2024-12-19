@@ -87,13 +87,11 @@ class GuidedUpsample:
         self,
         rx,
         ry,
-        mode,
         device,
     ):
         self.rx = rx
         self.ry = ry // 2
         self.device = device
-        self.mode = mode
 
     def __call__(
         self,
@@ -149,31 +147,40 @@ class GuidedUpsample:
             rx = self.rx  # // 3 // 2 * 2 + 1
             l = np.arange(rx) - rx // 2
             l = np.round(l * np.tan(np.deg2rad(-Angle))).astype(np.int32)
-            for _ in range(1):
-                b_batch = torch.zeros(rx, 1, 1, m, n)
-                for ind, r in enumerate(range(rx)):
-                    data = F.pad(b, (l.max(), l.max(), rx // 2, rx // 2), "reflect")
-                    b_batch[ind] = data[
-                        :, :, r : r + m, l[ind] - l.min() : l[ind] - l.min() + n
-                    ].cpu()
-                b = torch.median(b_batch, 0)[0]
-                if _ in range(self.ry):
-                    b = torch.median(
-                        torch.stack(
-                            (
-                                b,
-                                torch.roll(b, 1, 2),
-                                torch.roll(b, -1, 2),
-                                torch.roll(b, 1, 3),
-                                torch.roll(b, -1, 3),
-                            ),
-                            0,
+
+            b_batch = torch.zeros(rx, 1, 1, m, n)
+            for ind, r in enumerate(range(rx)):
+                data = F.pad(b, (l.max(), l.max(), rx // 2, rx // 2), "reflect")
+                b_batch[ind] = data[
+                    :, :, r : r + m, l[ind] - l.min() : l[ind] - l.min() + n
+                ].cpu()
+            b = torch.median(b_batch, 0)[0]
+            if _ in range(self.ry):
+                b = torch.median(
+                    torch.stack(
+                        (
+                            b,
+                            torch.roll(b, 1, 2),
+                            torch.roll(b, -1, 2),
+                            torch.roll(b, 1, 3),
+                            torch.roll(b, -1, 3),
                         ),
                         0,
-                    )[0]
+                    ),
+                    0,
+                )[0]
             b = b.to(self.device)
             hX = hX + b
 
-        hX = wave_rec(hX, hX_original, "db2", mode=self.mode)
+        hX_base = F.avg_pool2d(F.pad(hX, (4, 4, 4, 4), "reflect"), 9, 1, 0)
+        hX_original_base = F.avg_pool2d(
+            F.pad(hX_original, (4, 4, 4, 4), "reflect"), 9, 1, 0
+        )
+        hX_detail = hX - hX_base
+        hX_original_detail = hX_original - hX_original_base
+
+        hX = wave_rec(hX_detail, hX_original_detail, "db1", mode=1) + wave_rec(
+            hX_base, hX_original_base, "db2", mode=2
+        )
 
         return hX
