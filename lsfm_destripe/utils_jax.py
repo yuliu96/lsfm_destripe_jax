@@ -7,7 +7,175 @@ from functools import partial
 from jax import jit, value_and_grad
 import math
 import SimpleITK as sitk
+import copy
 from typing import List
+from lsfm_destripe.utils import crop_center
+
+
+def NeighborSampling(
+    m,
+    n,
+    k_neighbor=16,
+):
+    """
+    Do neighbor sampling
+
+    Parameters:
+    ---------------------
+    m: int
+        size of neighbor along X dim
+    n: int
+        size of neighbor along Y dim
+    k_neigher: int, data range [1, 32], 16 by default
+        number of neighboring points
+    """
+    width = 11
+    NI = jnp.zeros((m * n, k_neighbor), dtype=jnp.int32)
+    key = jax.random.key(0)
+    grid_x, grid_y = jnp.meshgrid(
+        jnp.linspace(1, m, m), jnp.linspace(1, n, n), indexing="ij"
+    )
+    grid_x, grid_y = grid_x - math.floor(m / 2) - 1, grid_y - math.floor(n / 2) - 1
+    grid_x, grid_y = grid_x.reshape(-1) ** 2, grid_y.reshape(-1) ** 2
+
+    iter_num = jnp.sqrt((grid_x + grid_y).max()) // width + 1
+
+    mask_outer = (grid_x + grid_y) < (width * jnp.arange(1, iter_num + 1)[:, None]) ** 2
+    mask_inner = (grid_x + grid_y) >= (width * jnp.arange(0, iter_num)[:, None]) ** 2
+    mask = mask_outer * mask_inner
+    ind = jnp.where(mask)
+    _, counts = jnp.unique(ind[0], return_counts=True)
+    counts_cumsum = jnp.cumsum(counts)
+
+    low = jnp.concatenate(
+        (jnp.array([0]), counts_cumsum[:-1]),
+    )
+
+    low = low.repeat(counts)
+    high = counts_cumsum
+    high = high.repeat(counts)
+    indc = jax.random.randint(key, (k_neighbor, len(low)), low, high).T
+    NI = NI.at[ind[1]].set(ind[1][indc])
+    zero_freq = (m * n) // 2
+    NI = NI[:zero_freq, :]
+    NI = NI.at[NI > zero_freq].set(2 * zero_freq - NI[NI > zero_freq])
+    return jnp.concatenate(
+        (jnp.linspace(0, NI.shape[0] - 1, NI.shape[0])[:, jnp.newaxis], NI),
+        axis=1,
+    ).astype(jnp.int32)
+
+
+def WedgeMask(
+    md,
+    nd,
+    Angle,
+    deg,
+):
+    """
+    Add docstring here
+    """
+    md_o, nd_o = copy.deepcopy(md), copy.deepcopy(nd)
+    md = max(md_o, nd_o)
+    nd = max(md_o, nd_o)
+
+    Xv, Yv = jnp.meshgrid(jnp.linspace(0, nd, nd + 1), jnp.linspace(0, md, md + 1))
+    tmp = jnp.arctan2(Xv, Yv)
+    tmp = jnp.hstack((jnp.flip(tmp[:, 1:], 1), tmp))
+    tmp = jnp.vstack((jnp.flip(tmp[1:, :], 0), tmp))
+    if Angle != 0:
+        rotate_mask = generate_mapping_coordinates(
+            -Angle,
+            tmp.shape[0],
+            tmp.shape[1],
+            False,
+        )
+        tmp = jax.scipy.ndimage.map_coordinates(
+            tmp[None, None],
+            rotate_mask,
+            0,
+            mode="nearest",
+        )[0, 0]
+
+    a = crop_center(tmp, md, nd)
+
+    tmp = Xv**2 + Yv**2
+    tmp = jnp.hstack((jnp.flip(tmp[:, 1:], 1), tmp))
+    tmp = jnp.vstack((jnp.flip(tmp[1:, :], 0), tmp))
+    b = tmp[md - md // 2 : md + md // 2 + 1, nd - nd // 2 : nd + nd // 2 + 1]
+    return crop_center(
+        (
+            ((a < math.pi / 180 * (90 - deg)).astype(jnp.int32))
+            * (b > 1024).astype(jnp.int32)
+        )
+        != 0,
+        md_o,
+        nd_o,
+    )
+
+
+def prepare_aux(
+    md: int,
+    nd: int,
+    is_vertical: bool,
+    angleOffset: List[float] = None,
+    deg: float = 29,
+    Nneighbors: int = 16,
+    NI_all=None,
+    backend="jax",
+):
+    """
+    the function preparing auxillary variables for training based on image shape
+
+    Parameters:
+    ------------
+    md: int
+        sampling nbr size along Y
+    nd: int
+        sampling nbr size along X
+    is_verticel: book
+        if the stripes are vertical
+    angleOffset: TODO
+        TODO
+    deg: float
+        TODO
+    Nneighbors: int
+        TODO
+
+    Returns:
+    -------------
+    NI: ndarray
+        TODO
+    hier_mask: ndarray
+        TODO
+    hier_ind: ndarray
+        TODO
+    """
+    if not is_vertical:
+        (nd, md) = (md, nd)
+
+    angleMask = jnp.ones((md, nd), dtype=np.int32)
+    for angle in angleOffset:
+        angleMask = angleMask * WedgeMask(
+            md,
+            nd,
+            Angle=angle,
+            deg=deg,
+        )
+    angleMask = angleMask[None]
+    angleMask = angleMask.reshape(angleMask.shape[0], -1)[:, : md * nd // 2]
+    hier_mask = jnp.where(angleMask == 1)[1]  ##(3, N)
+
+    hier_ind = jnp.argsort(
+        jnp.concatenate(
+            [jnp.where(angleMask.reshape(-1) == index)[0] for index in range(2)]
+        )
+    )
+    if NI_all is None:
+        NI_all = NeighborSampling(md, nd, k_neighbor=Nneighbors)
+    NI = jnp.concatenate(
+        [NI_all[angle_mask == 0, :].T for angle_mask in angleMask], 1
+    )  # 1 : Nneighbors + 1
+    return hier_mask, hier_ind, NI, NI_all
 
 
 def generate_mask_dict(
