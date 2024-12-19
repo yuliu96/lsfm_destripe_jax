@@ -35,7 +35,7 @@ class DeStripe:
         resample_ratio: int = 3,
         guided_upsample_kernel_length: int = 49,
         guided_upsample_kernel_width: int = 3,
-        guided_upsample_mode: str = "high fidelity",
+        guided_upsample_mode: str = "low fidelity",
         hessian_kernel_sigma: float = 1,
         lambda_masking_mse: int = 1,
         lambda_tv: float = 1,
