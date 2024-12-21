@@ -11,7 +11,7 @@ import copy
 from typing import List
 
 
-def generate_mask_dict(
+def generate_mask_dict_jax(
     y,
     hy,
     fusion_mask,

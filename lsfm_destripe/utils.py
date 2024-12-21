@@ -122,17 +122,20 @@ def NeighborSampling(
     if backend == "jax":
         indc = jax.random.randint(key, (k_neighbor, len(low)), low, high).T
     else:
-        indc = np.random.randint(low, high, (k_neighbor, len(low)))
+        indc = np.random.randint(low, high, (k_neighbor, len(low))).T
     if backend == "jax":
         NI = NI.at[ind[1]].set(ind[1][indc])
     else:
-        NI[ind[1]] = ind[1][indc].T
+        NI[ind[1]] = ind[1][indc]
+
     zero_freq = (m * n) // 2
     NI = NI[:zero_freq, :]
     if backend == "jax":
         NI = NI.at[NI > zero_freq].set(2 * zero_freq - NI[NI > zero_freq])
+        NI = NI.at[NI == zero_freq].set(zero_freq - 1)
     else:
         NI[NI > zero_freq] = 2 * zero_freq - NI[NI > zero_freq]
+        NI[NI == zero_freq] = zero_freq - 1
     return dep_package.concatenate(
         (
             dep_package.linspace(0, NI.shape[0] - 1, NI.shape[0])[

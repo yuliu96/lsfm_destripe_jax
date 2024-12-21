@@ -10,7 +10,7 @@ import jax.numpy as jnp
 from lsfm_destripe.utils_jax import (
     initialize_cmplx_model,
     update_jax,
-    generate_mask_dict,
+    generate_mask_dict_jax,
 )
 import tqdm
 import dask.array as da
@@ -67,7 +67,6 @@ class DeStripe:
 
     @staticmethod
     def train_on_one_slice(
-        network,
         GuidedFilterHRModel,
         update_method,
         sample_params: Dict,
@@ -102,7 +101,7 @@ class DeStripe:
             )
 
         # initialize
-        mask_dict, targets_f, targetd_bilinear = generate_mask_dict(
+        mask_dict, targets_f, targetd_bilinear = generate_mask_dict_jax(
             targetd,
             target,
             fusion_maskd,
@@ -118,7 +117,7 @@ class DeStripe:
         )
         aver = targetd.sum((2, 3))
         net_params = initialize_cmplx_model(
-            network,
+            update_method._network,
             rng_seq,
             {
                 "aver": aver,
@@ -326,7 +325,6 @@ class DeStripe:
                 fusion_mask_slice = jnp.asarray(fusion_mask_slice)
 
             Y, target = DeStripe.train_on_one_slice(
-                network,
                 GuidedFilterHRModel,
                 update_method,
                 sample_params,
