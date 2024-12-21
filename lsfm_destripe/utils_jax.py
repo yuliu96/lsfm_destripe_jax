@@ -23,7 +23,6 @@ def generate_mask_dict_jax(
     p_hessian,
     train_params,
     sample_params,
-    backend,
 ):
     r = train_params["max_pool_kernel_size"]
     md, nd = y.shape[-2:]
