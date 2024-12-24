@@ -237,7 +237,7 @@ class non_positive_unit:
     def __call__(self, x, target):
         x_non_pos = torch.clip(x - target, 0, None) + target
         x = torch.where(
-            torch.arange((x.shape[2])[None, None, :, None].to(x.device) % 2) == 1,
+            (torch.arange(x.shape[2])[None, None, :, None].to(x.device) % 2) == 1,
             x,
             x_non_pos,
         )
