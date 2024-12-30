@@ -445,6 +445,7 @@ class DeStripeModel_jax(hk.Module):
         target,
         target_hr,
         coor,
+        mask,
     ):
         Xf = self.p(Xf)  # (M*N, 2,)
         Xf_tvx = self.gnn(Xf)
