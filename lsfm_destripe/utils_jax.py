@@ -31,6 +31,18 @@ def generate_mask_dict_jax(
         axis=1, keepdims=True
     )
     ind = ind + jnp.arange(nd)[None, None, None, :]
+
+    mask_local_max = (
+        hk.max_pool(
+            y_pad,
+            (1, r),
+            (1, 1),
+            "VALID",
+            channel_axis=1,
+        )
+        != y
+    )
+
     mask_tv = (
         jnp.arctan2(
             jnp.abs(
@@ -147,7 +159,7 @@ def generate_mask_dict_jax(
         "ind_hessian_f": ind_hessian_f,
         "ind_tv_f": ind_tv_f,
         "coor": coor,
-        "mask_local_max": None,
+        "mask_local_max": mask_local_max,
     }
     return mask_dict, targets_f, targetd_bilinear
 
