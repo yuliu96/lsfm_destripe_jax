@@ -147,6 +147,7 @@ def generate_mask_dict_jax(
         "ind_hessian_f": ind_hessian_f,
         "ind_tv_f": ind_tv_f,
         "coor": coor,
+        "mask_local_max": None,
     }
     return mask_dict, targets_f, targetd_bilinear
 
