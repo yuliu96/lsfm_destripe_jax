@@ -411,6 +411,13 @@ class Loss_torch(nn.Module):
         targets_f,
     ):
         outputGNNraw_original, output_att = network(**inputs)
+        # ouotputGNNraw_original = torch.where(outputGNNraw_original == F.max_pool2d(outputGNNraw_original, (1, 89), stride = 1, padding = (0, 89//2)),
+        #                                      targets, outputGNNraw_original,)
+
+        # a = F.max_pool2d(outputGNNraw_original, (1, 89), stride = 1, padding = (0, 89//2))
+        # b = F.max_pool2d(targets, (1, 89), stride = 1, padding = (0, 89//2))
+        # outputGNNraw_original = torch.clip(a-b, 0, None)+b+outputGNNraw_original-a
+
         outputGNNraw_full = (
             F.grid_sample(
                 outputGNNraw_original - targets,
@@ -495,6 +502,7 @@ class Loss_torch(nn.Module):
             mode="bilinear",
             align_corners=True,
         )
+
         tv = self.total_variation_cal(
             outputGNNraw_original[1:2],
             targets,
@@ -505,8 +513,12 @@ class Loss_torch(nn.Module):
         )
 
         tv = tv + self.total_variation_cal(
-            outputGNNraw_original_f[1:2],
-            targets_f,
+            F.max_pool2d(
+                outputGNNraw_original_f[1:2], (7, 7), stride=1, padding=7 // 2
+            ),
+            F.max_pool2d(targets_f, (7, 7), stride=1, padding=7 // 2),
+            # outputGNNraw_original_f[1:2],
+            # targets_f,
             self.Dx_f,
             self.Dy_f,
             mask_dict["mask_tv_f"],
@@ -524,8 +536,12 @@ class Loss_torch(nn.Module):
         )
 
         hessian = hessian + self.hessian_cal(
-            outputGNNraw_original_f[1:2],
-            targets_f,
+            F.max_pool2d(
+                outputGNNraw_original_f[1:2], (13, 13), stride=1, padding=13 // 2
+            ),
+            F.max_pool2d(targets_f, (13, 13), stride=1, padding=13 // 2),
+            # outputGNNraw_original_f[1:2],
+            # targets_f,
             self.DGaussxx_f,
             self.DGaussyy_f,
             self.DGaussxy_f,

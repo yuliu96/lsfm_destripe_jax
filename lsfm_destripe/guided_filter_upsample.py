@@ -60,7 +60,7 @@ def wave_rec(
             x_base_dict.append(
                 WaveletDetailTuple2d(
                     torch.where(
-                        ~mask[0],
+                        mask[0],
                         detail[0],
                         torch.sign(detail[0]) * target[0].abs(),
                     ),
@@ -70,7 +70,7 @@ def wave_rec(
                         torch.sign(detail[1]) * target[1].abs(),
                     ),
                     torch.where(
-                        ~mask[2],
+                        mask[2],
                         detail[2],
                         torch.sign(detail[2]) * target[2].abs(),
                     ),
@@ -115,6 +115,19 @@ class GuidedUpsample:
             recon = torch.from_numpy(np.array(recon, copy=True)).to(self.device)
             hX = torch.from_numpy(np.array(hX)).to(self.device)
             fusion_mask = np.asarray(fusion_mask)
+        else:
+            recon = (
+                F.grid_sample(
+                    yy - targetd,
+                    coor,
+                    mode="bilinear",
+                    padding_mode="reflection",
+                    align_corners=True,
+                )
+                + target
+            )
+            fusion_mask = fusion_mask.cpu().data.numpy()
+
         m, n = hX.shape[-2:]
 
         y = np.ones_like(fusion_mask)
@@ -179,7 +192,7 @@ class GuidedUpsample:
         hX_detail = hX - hX_base
         hX_original_detail = hX_original - hX_original_base
 
-        hX = wave_rec(hX_detail, hX_original_detail, "db1", mode=1) + wave_rec(
+        hX = wave_rec(hX_detail, hX_original_detail, "db2", mode=2) + wave_rec(
             hX_base, hX_original_base, "db2", mode=2
         )
 

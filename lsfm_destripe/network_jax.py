@@ -208,9 +208,17 @@ class non_positive_unit:
     ):
         pass
 
-    def __call__(self, x, target):
-        x_non_pos = jnp.clip(x - target, 0, None) + target
-        x = x.at[:, :, ::2, :].set(x_non_pos[:, :, ::2, :])
+    def __call__(self, x, target, mask):
+        x_non_pos = jax.nn.leaky_relu(x - target, 0.5) + target
+        # x_non_pos = jnp.clip(x-target, 0, None) + target
+        # x = x.at[:, :, ::2, :].set(x_non_pos[:, :, ::2, :])
+        x = x * (jnp.arange(x.shape[2])[None, None, :, None] % 2 == 0) + x_non_pos * (
+            jnp.arange(x.shape[2])[None, None, :, None] % 2 == 1
+        )
+        # x = x*mask + target*(1-mask)
+        x = x.at[0, 0, jnp.arange(x.shape[-2])[None, None, :, None], mask].set(
+            x_non_pos[0, 0, jnp.arange(x.shape[-2])[None, None, :, None], mask]
+        )
         return x
 
 
@@ -458,6 +466,6 @@ class DeStripeModel_jax(hk.Module):
             init=jnp.ones,
         )
         outputGNNraw = outputGNNraw + alpha
-        outputGNNraw = self.non_positive_unit(outputGNNraw, target)
+        outputGNNraw = self.non_positive_unit(outputGNNraw, target, mask_local_max)
         outputLR = self.GuidedFilter(target, outputGNNraw, target_hr, coor)
         return outputGNNraw, outputLR

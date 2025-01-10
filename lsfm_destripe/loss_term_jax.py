@@ -7,6 +7,43 @@ from functools import partial
 import jaxwt
 
 
+class GuidedFilterLoss:
+    def __init__(self, r, eps=1e-9):
+        self.r, self.eps = r, eps
+
+    def diff_x(self, input, r):
+        return input[:, :, 2 * r + 1 :, :] - input[:, :, : -2 * r - 1, :]
+
+    def diff_y(self, input, r):
+        return input[:, :, :, 2 * r + 1 :] - input[:, :, :, : -2 * r - 1]
+
+    @partial(jit, static_argnums=(0,))
+    def boxfilter(self, input):
+        return self.diff_x(
+            self.diff_y(
+                jnp.pad(
+                    input,
+                    ((0, 0), (0, 0), (self.r + 1, self.r), (self.r + 1, self.r)),
+                    mode="reflect",
+                ).cumsum(3),
+                self.r,
+            ).cumsum(2),
+            self.r,
+        )
+
+    @partial(jit, static_argnums=(0,))
+    def __call__(self, x, y):
+        N = self.boxfilter(jnp.ones_like(x))
+        mean_x_y = self.boxfilter(x) / N
+        mean_x2 = self.boxfilter(x * y) / N
+        cov_xy = mean_x2 - mean_x_y * mean_x_y
+        var_x = mean_x2 - mean_x_y * mean_x_y
+        A = cov_xy / (var_x + self.eps)  # jnp.clip(var_x, self.eps, None)
+        b = mean_x_y - A * mean_x_y
+        A, b = self.boxfilter(A) / N, self.boxfilter(b) / N
+        return A * x + b
+
+
 class Loss_jax:
     def __init__(
         self,
@@ -158,6 +195,11 @@ class Loss_jax:
             self.HessianRegularizationLoss
             if len(self.angleOffset) > 1
             else self.HessianRegularizationLoss_plain
+        )
+
+        self.GuidedFilterLoss = GuidedFilterLoss(
+            r=train_params["max_pool_kernel_size"],
+            eps=1,
         )
 
     def total_variation_kernel(
@@ -425,27 +467,16 @@ class Loss_jax:
         outputGNNraw = jax.image.resize(
             outputGNNraw_full, targets.shape, method="bilinear"
         )
-        outputGNNraw_original_pad = jnp.pad(
-            targets - outputGNNraw_original,
-            ((0, 0), (0, 0), (0, 0), (self.GF_pad // 2, self.GF_pad // 2)),
-            "reflect",
-        )
 
         m, n = outputGNNraw_original.shape[-2:]
 
-        mse = 1 * jnp.sum(
+        mse = 10 * jnp.sum(
             jnp.abs(
-                outputGNNraw_original_pad[
-                    0,
-                    0,
-                    jnp.arange(outputGNNraw_original.shape[-2])[None, None, :, None],
-                    mask_dict["ind"],
-                ]
+                self.GuidedFilterLoss(targets, targets)
+                - self.GuidedFilterLoss(outputGNNraw_original, outputGNNraw_original)
             )
-        ) + self.lambda_masking_mse * jnp.sum(
-            jnp.abs(targets - outputGNNraw_original) * mask_dict["mse_mask"]
         )
-
+        # mse = jnp.sum(jnp.abs((targets-outputGNNraw_original)[0, 0, jnp.arange(targets.shape[-2])[None, None, :, None], mask_dict["ind"]]))
         output_att_dict = [jaxwt.wavedec2(output_att, "db4", level=1, mode="reflect")]
         l = 6
         for _ in range(l - 1):
@@ -479,6 +510,7 @@ class Loss_jax:
         )
 
         outputGNNraw_original_f = jax.image.resize(
+            # jnp.clip(outputGNNraw_original-targets, 0)+targets,
             outputGNNraw_original,
             (
                 2,

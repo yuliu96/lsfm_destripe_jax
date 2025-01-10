@@ -78,17 +78,17 @@ class DeStripe:
         z: int = 1,
         backend: str = "jax",
     ):
-        rng_seq = jax.random.PRNGKey(0)
+        rng_seq = jax.random.PRNGKey(0) if backend == "jax" else None
         md = (
             sample_params["md"] if sample_params["is_vertical"] else sample_params["nd"]
         )
         nd = (
             sample_params["nd"] if sample_params["is_vertical"] else sample_params["md"]
         )
-
         target = (X * fusion_mask).sum(1, keepdims=True)
-
         targetd = target[:, :, :: sample_params["r"], :]
+        print(targetd.min(), targetd.max())
+
         Xd = X[:, :, :: sample_params["r"], :]
         fusion_maskd = fusion_mask[:, :, :: sample_params["r"], :]
 
@@ -99,9 +99,18 @@ class DeStripe:
                 .reshape(1, targetd.shape[1], -1)[0]
                 .transpose(1, 0)[: md * nd // 2, :][..., None]
             )
+        else:
+            targetf = (
+                torch.fft.fftshift(torch.fft.fft2(targetd), dim=(-2, -1))
+                .reshape(1, targetd.shape[1], -1)[0]
+                .transpose(1, 0)[: md * nd // 2, :][..., None]
+            )
 
         # initialize
-        mask_dict, targets_f, targetd_bilinear = generate_mask_dict_jax(
+        generate_mask_dict_func = (
+            generate_mask_dict_jax if backend == "jax" else generate_mask_dict_torch
+        )
+        mask_dict, targets_f, targetd_bilinear = generate_mask_dict_func(
             targetd,
             target,
             fusion_maskd,
@@ -113,8 +122,8 @@ class DeStripe:
             update_method.loss.p_hessian,
             train_params,
             sample_params,
-            backend=backend,
         )
+
         aver = targetd.sum((2, 3))
         net_params = initialize_cmplx_model(
             update_method._network,
@@ -125,6 +134,7 @@ class DeStripe:
                 "target": targetd,
                 "target_hr": target,
                 "coor": mask_dict["coor"],
+                "mask_local_max": mask_dict["mask_local_max"],
             },
             backend=backend,
         )
@@ -154,6 +164,10 @@ class DeStripe:
                 targets_f,
                 targetd_bilinear,
             )
+            # if epoch % 30 == 0:
+            #     plt.imshow(10**Y_raw[0, 0].cpu().data.numpy())
+            #     plt.show()
+
         Y = GuidedFilterHRModel(
             Xd,
             Y_raw,
@@ -165,7 +179,11 @@ class DeStripe:
             sample_params["angle_offset_individual"],
             backend=backend,
         )
-        return Y[0, 0], 10 ** np.asarray(target[0, 0]) if backend == "jax" else None
+        return Y[0, 0], (
+            10 ** np.asarray(target[0, 0])
+            if backend == "jax"
+            else 10 ** target[0, 0].cpu().data.numpy()
+        )
 
     @staticmethod
     def train_on_full_arr(
@@ -232,7 +250,7 @@ class DeStripe:
                 n // train_params["resample_ratio"],
             )
 
-        hier_mask_arr, hier_ind_arr, NI_arr, _ = prepare_aux(
+        hier_mask_arr, hier_ind_arr, NI_arr = prepare_aux(
             sample_params["md"],
             sample_params["nd"],
             sample_params["is_vertical"],
@@ -273,7 +291,7 @@ class DeStripe:
         )
 
         network = transform_cmplx_model(
-            model=DeStripeModel_jax,
+            model=DeStripeModel_jax if backend == "jax" else DeStripeModel_torch,
             inc=train_params["inc"],
             m_l=(
                 sample_params["md"]
@@ -291,7 +309,7 @@ class DeStripe:
             hier_ind=hier_ind_arr,
             r=sample_params["r"],
             non_positive=non_positive,
-            backend="jax",
+            backend=backend,
             device=device,
         )
 
@@ -304,7 +322,15 @@ class DeStripe:
         )
         if backend == "jax":
             update_method = update_jax(
-                network, Loss_jax(train_params, sample_params), 0.01
+                network,
+                Loss_jax(train_params, sample_params),
+                0.01,
+            )
+        else:
+            update_method = update_torch(
+                network,
+                Loss_torch(train_params, sample_params).to(device),
+                0.01,
             )
 
         for i in range(z):
@@ -323,6 +349,10 @@ class DeStripe:
                 input = jnp.asarray(input)
                 mask_slice = jnp.asarray(mask_slice)
                 fusion_mask_slice = jnp.asarray(fusion_mask_slice)
+            else:
+                input = torch.from_numpy(input).to(device)
+                mask_slice = torch.from_numpy(mask_slice).to(device)
+                fusion_mask_slice = torch.from_numpy(fusion_mask_slice).to(device)
 
             Y, target = DeStripe.train_on_one_slice(
                 GuidedFilterHRModel,

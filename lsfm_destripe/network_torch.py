@@ -121,9 +121,11 @@ class gnn(nn.Module):
         super(gnn, self).__init__()
         self.register_buffer("hier_mask", hier_mask)
         self.register_buffer("hier_ind", hier_ind)
-        self.register_buffer("NI", NI)
+        self.register_buffer("NI", NI[1:,])
         self.inc = inc
-        self.w = nn.Parameter(torch.randn(NI.shape) + 1j * torch.randn(NI.shape))
+        self.w = nn.Parameter(
+            torch.randn(self.NI.shape) + 1j * torch.randn(self.NI.shape)
+        )
         self.w.data = Cmplx_Xavier_Init(self.w.data)
 
     def forward(
@@ -224,7 +226,14 @@ class identical_func:
     ):
         pass
 
-    def __call__(self, x, boundary):
+    def __call__(self, x, target, mask):
+        return x
+        # mask = F.max_pool2d(target, (1, 189), stride = 1, padding = (0, 94))
+        x = torch.where(
+            mask,
+            x,
+            target,
+        )
         return x
 
 
@@ -234,10 +243,18 @@ class non_positive_unit:
     ):
         pass
 
-    def __call__(self, x, target):
-        x_non_pos = torch.clip(x - target, 0, None) + target
+    def __call__(self, x, target, mask):
+        # mask = F.max_pool2d(target, (1, 189), stride = 1, padding = (0, 94))
+        # x_non_pos = torch.clip(x - target, 0, None) + target
+        x_non_pos = F.leaky_relu(x - target, 0.1) + target
         x = torch.where(
-            (torch.arange(x.shape[2])[None, None, :, None].to(x.device) % 2) == 1,
+            ((torch.arange(x.shape[2])[None, None, :, None].to(x.device) % 2) == 1),
+            # ((torch.arange(x.shape[3])[None, None, None, :].to(x.device) % 2) == 1),
+            x,
+            x_non_pos,
+        )
+        x = torch.where(
+            mask,
             x,
             x_non_pos,
         )
@@ -449,6 +466,7 @@ class DeStripeModel_torch(nn.Module):
         target,
         target_hr,
         coor,
+        mask,
     ):
         Xf = self.p(Xf)
         Xf_tvx = self.gnn(Xf)
@@ -460,7 +478,7 @@ class DeStripeModel_torch(nn.Module):
         )
         outputGNNraw = self.fourierResult(X_fourier[..., 0], aver)
         outputGNNraw = outputGNNraw + self.alpha
-        outputGNNraw = self.non_positive_unit(outputGNNraw, target)
+        outputGNNraw = self.non_positive_unit(outputGNNraw, target, mask)
         outputLR = self.GuidedFilter(target, outputGNNraw, target_hr, coor)
 
         return outputGNNraw, outputLR

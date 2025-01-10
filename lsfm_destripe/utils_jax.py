@@ -26,21 +26,10 @@ def generate_mask_dict_jax(
 ):
     r = train_params["max_pool_kernel_size"]
     md, nd = y.shape[-2:]
-    y_pad = jnp.pad(y, ((0, 0), (0, 0), (0, 0), (r // 2, r // 2)), "reflect")
-    ind = jax.lax.conv_general_dilated_patches(y_pad, (1, r), (1, 1), "VALID").argmax(
-        axis=1, keepdims=True
-    )
-    ind = ind + jnp.arange(nd)[None, None, None, :]
 
-    mask_local_max = (
-        hk.max_pool(
-            y_pad,
-            (1, r),
-            (1, 1),
-            "VALID",
-            channel_axis=1,
-        )
-        != y
+    targetd_bilinear = jax.image.resize(hy, y.shape, method="bilinear")
+    targets_f = jax.image.resize(
+        targetd_bilinear, (1, 1, md, nd // sample_params["r"]), "bilinear"
     )
 
     mask_tv = (
@@ -56,7 +45,7 @@ def generate_mask_dict_jax(
                 )
             ),
         )
-        ** 12
+        ** 10
     )
 
     mask_hessian = (
@@ -78,7 +67,7 @@ def generate_mask_dict_jax(
                 )
             ),
         )
-        ** 12
+        ** 10
     )
 
     mask_valid = jnp.zeros_like(mask_hessian)
@@ -132,21 +121,38 @@ def generate_mask_dict_jax(
         mask_hessian, [DGaussxx.shape[-2], DGaussxx.shape[-2]], [1, 1], "SAME"
     )
 
+    y_pad = jnp.pad(targets_f, ((0, 0), (0, 0), (0, 0), (r // 2, r // 2)), "constant")
+    inds = jax.lax.conv_general_dilated_patches(y_pad, (1, r), (1, 1), "VALID").argmax(
+        axis=1, keepdims=True
+    )
+    inds = inds + jnp.arange(targets_f.shape[-1])[None, None, None, :] - r // 2
+
+    y_pad = jnp.pad(y, ((0, 0), (0, 0), (0, 0), (r // 2, r // 2)), "constant")
+    ind = jax.lax.conv_general_dilated_patches(y_pad, (1, r), (1, 1), "VALID").argmax(
+        axis=1, keepdims=True
+    )
+    ind = ind + jnp.arange(y.shape[-1])[None, None, None, :] - r // 2
+
     mask_tv_f = hk.max_pool(mask_tv_f, [Dx.shape[-2], Dx.shape[-1]], [1, 1], "SAME")
     mask_hessian_f = hk.max_pool(
         mask_hessian_f, [DGaussxx.shape[-2], DGaussxx.shape[-2]], [1, 1], "SAME"
     )
+
+    mask_tv_f = mask_tv_f.at[
+        :, :, jnp.arange(y.shape[-2])[None, None, :, None], inds
+    ].set(0)
+    mask_hessian_f = mask_hessian_f.at[
+        :, :, jnp.arange(y.shape[-2])[None, None, :, None], inds
+    ].set(0)
+
+    # mask_tv = mask_tv.at[:, :, jnp.arange(y.shape[-2])[None, None, :, None], ind].set(0)
+    # mask_hessian = mask_hessian.at[:, :, jnp.arange(y.shape[-2])[None, None, :, None], ind].set(0)
 
     t = jnp.linspace(0, y.shape[-2] - 1, (y.shape[-2] - 1) * sample_params["r"] + 1)
     t = jnp.concatenate((t, t[1 : sample_params["r"]] + t[-1]))
     coor = jnp.zeros((4, hy.shape[-2], hy.shape[-1]))
     coor = coor.at[2, :, :].set(t[:, None])
     coor = coor.at[3, :, :].set(jnp.arange(hy.shape[-1])[None, :])
-
-    targetd_bilinear = jax.image.resize(hy, y.shape, method="bilinear")
-    targets_f = jax.image.resize(
-        targetd_bilinear, (1, 1, md, nd // sample_params["r"]), "bilinear"
-    )
 
     mask_dict = {
         "mask_tv": mask_tv,
@@ -159,8 +165,9 @@ def generate_mask_dict_jax(
         "ind_hessian_f": ind_hessian_f,
         "ind_tv_f": ind_tv_f,
         "coor": coor,
-        "mask_local_max": mask_local_max,
+        "mask_local_max": ind,
     }
+
     return mask_dict, targets_f, targetd_bilinear
 
 
