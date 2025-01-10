@@ -87,7 +87,6 @@ class DeStripe:
         )
         target = (X * fusion_mask).sum(1, keepdims=True)
         targetd = target[:, :, :: sample_params["r"], :]
-        print(targetd.min(), targetd.max())
 
         Xd = X[:, :, :: sample_params["r"], :]
         fusion_maskd = fusion_mask[:, :, :: sample_params["r"], :]
