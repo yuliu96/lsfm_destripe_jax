@@ -116,7 +116,7 @@ class identical_func:
     ):
         pass
 
-    def __call__(self, x, boundary):
+    def __call__(self, x, target, mask):
         return x
 
 
