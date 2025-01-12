@@ -223,7 +223,7 @@ class DeStripe:
             "r": r,
         }
         z, _, m, n = X.shape
-        result = np.zeros((z, m, n), dtype=np.uint16)
+        result = copy.deepcopy(X[:, 0, :, :])
         mean = np.zeros(z)
         if sample_params["is_vertical"]:
             n = n if n % 2 == 1 else n - 1
