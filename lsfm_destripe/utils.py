@@ -51,7 +51,7 @@ def global_correction(
 
 def destripe_train_params(
     resample_ratio: int = 3,
-    gf_kernel_size: int = 29,
+    gf_kernel_size: int = 49,
     hessian_kernel_sigma: float = 0.5,
     lambda_masking_mse: int = 2,
     lambda_tv: float = 1,
@@ -60,7 +60,6 @@ def destripe_train_params(
     n_epochs: int = 300,
     wedge_degree: float = 29,
     n_neighbors: int = 16,
-    gf_kernel_size_in_y: int = 3,
     gf_mode: int = 1,
     backend: str = "jax",
 ):
