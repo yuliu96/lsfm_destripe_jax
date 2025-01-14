@@ -33,8 +33,7 @@ class DeStripe:
     def __init__(
         self,
         resample_ratio: int = 3,
-        guided_upsample_kernel_length: int = 49,
-        guided_upsample_kernel_width: int = 3,
+        guided_upsample_kernel: int = 49,
         hessian_kernel_sigma: float = 1,
         lambda_masking_mse: int = 1,
         lambda_tv: float = 1,
@@ -47,8 +46,7 @@ class DeStripe:
         device: str = None,
     ):
         self.train_params = {
-            "gf_kernel_size_in_y": guided_upsample_kernel_width,
-            "gf_kernel_size": guided_upsample_kernel_length,
+            "gf_kernel_size": guided_upsample_kernel,
             "n_neighbors": n_neighbors,
             "inc": inc,
             "hessian_kernel_sigma": hessian_kernel_sigma,
@@ -133,7 +131,6 @@ class DeStripe:
                 "target": targetd,
                 "target_hr": target,
                 "coor": mask_dict["coor"],
-                "mask_local_max": mask_dict["mask_local_max"],
             },
             backend=backend,
         )
@@ -163,12 +160,8 @@ class DeStripe:
                 targets_f,
                 targetd_bilinear,
             )
-            # if epoch % 30 == 0:
-            #     plt.imshow(10**Y_raw[0, 0].cpu().data.numpy())
-            #     plt.show()
 
         Y = GuidedFilterHRModel(
-            Xd,
             Y_raw,
             X,
             targetd,
@@ -221,6 +214,7 @@ class DeStripe:
             "angle_offset": angle_offset,
             "angle_offset_individual": angle_offset_individual,
             "r": r,
+            "non_positive": non_positive,
         }
         z, _, m, n = X.shape
         result = copy.deepcopy(X[:, 0, :, :])
@@ -285,7 +279,6 @@ class DeStripe:
 
         GuidedFilterHRModel = GuidedUpsample(
             rx=train_params["gf_kernel_size"],
-            ry=train_params["gf_kernel_size_in_y"],
             device=device,
         )
 
@@ -307,7 +300,6 @@ class DeStripe:
             hier_mask=hier_mask_arr,
             hier_ind=hier_ind_arr,
             r=sample_params["r"],
-            non_positive=non_positive,
             backend=backend,
             device=device,
         )
@@ -386,7 +378,7 @@ class DeStripe:
             )
             mean[i] = np.mean(result[i] + 0.1)
 
-        if z != 1:
+        if (z != 1) and (not sample_params["non_positive"]):
             print("global correcting...")
             result = global_correction(mean, result)
         print("Done")
