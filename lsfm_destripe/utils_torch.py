@@ -63,6 +63,8 @@ def generate_mask_dict_torch(
     train_params,
     sample_params,
 ):
+    md, nd = y.shape[-2:]
+    r = train_params["max_pool_kernel_size"]
 
     targetd_bilinear = F.interpolate(
         hy, y.shape[-2:], mode="bilinear", align_corners=True
@@ -73,9 +75,6 @@ def generate_mask_dict_torch(
         mode="bilinear",
         align_corners=True,
     )
-
-    r = train_params["max_pool_kernel_size"]
-    md, nd = y.shape[-2:]
 
     mask_tv = (
         torch.atan2(
