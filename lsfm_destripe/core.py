@@ -29,7 +29,7 @@ from lsfm_destripe.loss_term_jax import Loss_jax
 import torch
 from lsfm_destripe.network_torch import DeStripeModel_torch
 from lsfm_destripe.loss_term_torch import Loss_torch
-from lsfm_destripe.utils_torch import update_torch
+from lsfm_destripe.utils_torch import update_torch, generate_mask_dict_torch
 
 
 class DeStripe:
