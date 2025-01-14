@@ -73,10 +73,10 @@ def generate_mask_dict_jax(
     mask_valid = jnp.zeros_like(mask_hessian)
     for i, ao in enumerate(sample_params["angle_offset_individual"]):
         mask_xi_f = np.isin(sample_params["angle_offset"], ao)
-        mask_xi = mask_xi_f[:, None].repeat(5, 1).reshape(-1)
+        mask_xi = mask_xi_f[:, None].reshape(-1)
         mask_valid += mask_xi[None, :, None, None] * fusion_mask[:, i : i + 1, :, :]
     mask_valid = mask_valid > 0
-    mask_tv = mask_tv * mask_valid[:, ::5, :, :]
+    mask_tv = mask_tv * mask_valid
     mask_hessian = mask_hessian * mask_valid
 
     mask_tv_f = -hk.max_pool(
@@ -93,17 +93,8 @@ def generate_mask_dict_jax(
     ind_tv = jnp.argmax(mask_tv, axis=1, keepdims=True)
     mask_tv = jnp.max(mask_tv, axis=1, keepdims=True)
 
-    mask_hessian_f_split = jnp.split(
-        jnp.arange(mask_hessian.shape[1]), len(sample_params["angle_offset"])
-    )
-    mask_hessian_f = []
-    for data_ind in mask_hessian_f_split:
-        mask_hessian_f.append(
-            jnp.max(mask_hessian[:, data_ind, :, :], 1, keepdims=True)
-        )
-    mask_hessian_f = jnp.concatenate(mask_hessian_f, 1)
     mask_hessian_f = -hk.max_pool(
-        -mask_hessian_f,
+        -mask_hessian,
         [1, sample_params["r"]],
         [1, sample_params["r"]],
         "VALID",
@@ -131,7 +122,7 @@ def generate_mask_dict_jax(
     ind = jax.lax.conv_general_dilated_patches(y_pad, (1, r), (1, 1), "VALID").argmax(
         axis=1, keepdims=True
     )
-    ind = ind + jnp.arange(y.shape[-1])[None, None, None, :] - r // 2
+    ind = ind + jnp.arange(0, y.shape[-1])[None, None, None, :] - r // 2
 
     mask_tv_f = hk.max_pool(mask_tv_f, [Dx.shape[-2], Dx.shape[-1]], [1, 1], "SAME")
     mask_hessian_f = hk.max_pool(
@@ -144,9 +135,6 @@ def generate_mask_dict_jax(
     mask_hessian_f = mask_hessian_f.at[
         :, :, jnp.arange(y.shape[-2])[None, None, :, None], inds
     ].set(0)
-
-    # mask_tv = mask_tv.at[:, :, jnp.arange(y.shape[-2])[None, None, :, None], ind].set(0)
-    # mask_hessian = mask_hessian.at[:, :, jnp.arange(y.shape[-2])[None, None, :, None], ind].set(0)
 
     t = jnp.linspace(0, y.shape[-2] - 1, (y.shape[-2] - 1) * sample_params["r"] + 1)
     t = jnp.concatenate((t, t[1 : sample_params["r"]] + t[-1]))
@@ -165,7 +153,6 @@ def generate_mask_dict_jax(
         "ind_hessian_f": ind_hessian_f,
         "ind_tv_f": ind_tv_f,
         "coor": coor,
-        "mask_local_max": ind,
     }
 
     return mask_dict, targets_f, targetd_bilinear
