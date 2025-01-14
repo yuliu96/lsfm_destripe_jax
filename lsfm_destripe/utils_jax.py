@@ -142,6 +142,14 @@ def generate_mask_dict_jax(
     coor = coor.at[2, :, :].set(t[:, None])
     coor = coor.at[3, :, :].set(jnp.arange(hy.shape[-1])[None, :])
 
+    mask = jnp.zeros_like(y)
+    mask = mask.at[
+        0,
+        0,
+        jnp.arange(y.shape[-2])[None, None, ::2, None],
+        ind[:, :, ::2, :],
+    ].set(1)
+
     mask_dict = {
         "mask_tv": mask_tv,
         "mask_hessian": mask_hessian,
@@ -153,6 +161,7 @@ def generate_mask_dict_jax(
         "ind_hessian_f": ind_hessian_f,
         "ind_tv_f": ind_tv_f,
         "coor": coor,
+        "non_positive_mask": mask,
     }
 
     return mask_dict, targets_f, targetd_bilinear
