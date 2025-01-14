@@ -297,7 +297,6 @@ class update_jax:
                 "target": y,
                 "target_hr": hy,
                 "coor": mask_dict["coor"],
-                "mask_local_max": mask_dict["mask_local_max"],
             },
             targetd_bilinear,
             mask_dict,
