@@ -44,6 +44,62 @@ class GuidedFilterLoss:
         return A * x + b
 
 
+def non_pos_unit(
+    outputGNNraw_original,
+    outputGNNraw,
+    mask_dict,
+    targets,
+    r,
+):
+    m, n = outputGNNraw_original.shape[-2:]
+    outputGNNraw2 = (
+        outputGNNraw * (1 - mask_dict["non_positive_mask"])
+        + targets * mask_dict["non_positive_mask"]
+    )
+    outputGNNraw_original = jnp.concatenate(
+        (outputGNNraw_original, outputGNNraw, outputGNNraw2), 0
+    )
+    outputGNNraw_original_f = jax.image.resize(
+        outputGNNraw_original,
+        (
+            3,
+            1,
+            m,
+            n // r,
+        ),
+        method="bilinear",
+    )
+    return outputGNNraw_original, outputGNNraw_original_f
+
+
+def identical_unit(
+    outputGNNraw_original,
+    outputGNNraw,
+    mask_dict,
+    targets,
+    r,
+):
+    m, n = outputGNNraw_original.shape[-2:]
+    outputGNNraw_original = jnp.concatenate(
+        (
+            outputGNNraw_original,
+            outputGNNraw,
+        ),
+        0,
+    )
+    outputGNNraw_original_f = jax.image.resize(
+        outputGNNraw_original,
+        (
+            2,
+            1,
+            m,
+            n // r,
+        ),
+        method="bilinear",
+    )
+    return outputGNNraw_original, outputGNNraw_original_f
+
+
 class Loss_jax:
     def __init__(
         self,
@@ -78,11 +134,7 @@ class Loss_jax:
                 np.rad2deg(
                     np.arctan(
                         shape_params["r"]
-                        * np.tan(
-                            np.deg2rad(
-                                self.angleOffset[i] + np.array([-2.0, -1, 0, 1, 2])
-                            )
-                        )
+                        * np.tan(np.deg2rad([self.angleOffset[i] + +0.0]))
                     )
                 ).tolist(),
             )
@@ -121,17 +173,17 @@ class Loss_jax:
         self.DGaussxy = (
             self.DGaussxy
             / jnp.abs(self.DGaussxy).sum(axis=(-2, -1), keepdims=True)
-            * jnp.abs(self.Dx.repeat(5, 0)).sum(axis=(-2, -1), keepdims=True)
+            * jnp.abs(self.Dx).sum(axis=(-2, -1), keepdims=True)
         )
         self.DGaussyy = (
             self.DGaussyy
             / jnp.abs(self.DGaussyy).sum(axis=(-2, -1), keepdims=True)
-            * jnp.abs(self.Dx.repeat(5, 0)).sum(axis=(-2, -1), keepdims=True)
+            * jnp.abs(self.Dx).sum(axis=(-2, -1), keepdims=True)
         )
         self.DGaussxx = (
             self.DGaussxx
             / jnp.abs(self.DGaussxx).sum(axis=(-2, -1), keepdims=True)
-            * jnp.abs(self.Dx.repeat(5, 0)).sum(axis=(-2, -1), keepdims=True)
+            * jnp.abs(self.Dx).sum(axis=(-2, -1), keepdims=True)
         )
 
         self.DGaussxy_f = (
@@ -200,6 +252,20 @@ class Loss_jax:
         self.GuidedFilterLoss = GuidedFilterLoss(
             r=train_params["max_pool_kernel_size"],
             eps=1,
+        )
+        if shape_params["non_positive"]:
+            self.non_postive_uint = non_pos_unit
+            self.main_loss = lambda a, b: 0
+        else:
+            self.non_postive_uint = identical_unit
+            self.main_loss = self.gf_loss
+
+    def gf_loss(self, targets, outputGNNraw_original):
+        return 10 * jnp.sum(
+            jnp.abs(
+                self.GuidedFilterLoss(targets, targets)
+                - self.GuidedFilterLoss(outputGNNraw_original, outputGNNraw_original)
+            )
         )
 
     def total_variation_kernel(
@@ -468,15 +534,7 @@ class Loss_jax:
             outputGNNraw_full, targets.shape, method="bilinear"
         )
 
-        m, n = outputGNNraw_original.shape[-2:]
-
-        mse = 10 * jnp.sum(
-            jnp.abs(
-                self.GuidedFilterLoss(targets, targets)
-                - self.GuidedFilterLoss(outputGNNraw_original, outputGNNraw_original)
-            )
-        )
-        # mse = jnp.sum(jnp.abs((targets-outputGNNraw_original)[0, 0, jnp.arange(targets.shape[-2])[None, None, :, None], mask_dict["ind"]]))
+        mse = self.main_loss(targets, outputGNNraw_original)
         output_att_dict = [jaxwt.wavedec2(output_att, "db4", level=1, mode="reflect")]
         l = 6
         for _ in range(l - 1):
@@ -505,24 +563,16 @@ class Loss_jax:
                 jnp.abs(output_att_dict[i][1][2] - output_gnn_hr_dict[i][1][2])
             )
 
-        outputGNNraw_original = jnp.concatenate(
-            (outputGNNraw_original, outputGNNraw), 0
-        )
-
-        outputGNNraw_original_f = jax.image.resize(
-            # jnp.clip(outputGNNraw_original-targets, 0)+targets,
+        outputGNNraw_original, outputGNNraw_original_f = self.non_postive_uint(
             outputGNNraw_original,
-            (
-                2,
-                1,
-                m,
-                n // self.r,
-            ),
-            method="bilinear",
+            outputGNNraw,
+            mask_dict,
+            targets,
+            self.r,
         )
 
         tv = self.total_variation_cal(
-            outputGNNraw_original[1:2],
+            outputGNNraw_original[1:],
             targets,
             self.Dx,
             self.Dy,
@@ -531,7 +581,7 @@ class Loss_jax:
         )
 
         tv = tv + self.total_variation_cal(
-            outputGNNraw_original_f[1:2],
+            outputGNNraw_original_f[1:],
             targets_f,
             self.Dx_f,
             self.Dy_f,
@@ -539,8 +589,8 @@ class Loss_jax:
             mask_dict["ind_tv_f"],
         )
 
-        hessian = self.HessianRegularizationLoss(
-            outputGNNraw_original[1:2],
+        hessian = self.hessian_cal(
+            outputGNNraw_original[1:],
             targets,
             self.DGaussxx,
             self.DGaussyy,
@@ -550,7 +600,7 @@ class Loss_jax:
         )
 
         hessian = hessian + self.hessian_cal(
-            outputGNNraw_original_f[1:2],
+            outputGNNraw_original_f[1:],
             targets_f,
             self.DGaussxx_f,
             self.DGaussyy_f,
