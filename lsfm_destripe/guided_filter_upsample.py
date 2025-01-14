@@ -86,11 +86,9 @@ class GuidedUpsample:
     def __init__(
         self,
         rx,
-        ry,
         device,
     ):
         self.rx = rx
-        self.ry = ry // 2
         self.device = device
 
     def __call__(
@@ -160,7 +158,6 @@ class GuidedUpsample:
             rx = self.rx  # // 3 // 2 * 2 + 1
             l = np.arange(rx) - rx // 2
             l = np.round(l * np.tan(np.deg2rad(-Angle))).astype(np.int32)
-
             b_batch = torch.zeros(rx, 1, 1, m, n)
             for ind, r in enumerate(range(rx)):
                 data = F.pad(b, (l.max(), l.max(), rx // 2, rx // 2), "reflect")
@@ -168,20 +165,7 @@ class GuidedUpsample:
                     :, :, r : r + m, l[ind] - l.min() : l[ind] - l.min() + n
                 ].cpu()
             b = torch.median(b_batch, 0)[0]
-            if _ in range(self.ry):
-                b = torch.median(
-                    torch.stack(
-                        (
-                            b,
-                            torch.roll(b, 1, 2),
-                            torch.roll(b, -1, 2),
-                            torch.roll(b, 1, 3),
-                            torch.roll(b, -1, 3),
-                        ),
-                        0,
-                    ),
-                    0,
-                )[0]
+
             b = b.to(self.device)
             hX = hX + b
 
