@@ -27,6 +27,9 @@ import dask.array as da
 from aicsimageio import AICSImage
 from lsfm_destripe.loss_term_jax import Loss_jax
 import torch
+from lsfm_destripe.network_torch import DeStripeModel_torch
+from lsfm_destripe.loss_term_torch import Loss_torch
+from lsfm_destripe.utils_torch import update_torch
 
 
 class DeStripe:
