@@ -124,9 +124,17 @@ def generate_mask_dict_jax(
     )
     ind = ind + jnp.arange(0, y.shape[-1])[None, None, None, :] - r // 2
 
-    mask_tv_f = hk.max_pool(mask_tv_f, [Dx.shape[-2], Dx.shape[-1]], [1, 1], "SAME")
+    mask_tv_f = hk.max_pool(
+        mask_tv_f,
+        [Dx.shape[-2], Dx.shape[-1]],
+        [1, 1],
+        "SAME",
+    )
     mask_hessian_f = hk.max_pool(
-        mask_hessian_f, [DGaussxx.shape[-2], DGaussxx.shape[-2]], [1, 1], "SAME"
+        mask_hessian_f,
+        [DGaussxx.shape[-2], DGaussxx.shape[-2]],
+        [1, 1],
+        "SAME",
     )
 
     mask_tv_f = mask_tv_f.at[

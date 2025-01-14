@@ -1,5 +1,6 @@
 import torch
 import torch.nn.functional as F
+import numpy as np
 
 
 class update_torch:
@@ -38,7 +39,6 @@ class update_torch:
                 "target": y,
                 "target_hr": hy,
                 "coor": mask_dict["coor"],
-                "mask": mask_dict["mask_local_max"],
             },
             targetd_bilinear,
             mask_dict,
@@ -65,15 +65,6 @@ def generate_mask_dict_torch(
 ):
     r = train_params["max_pool_kernel_size"]
     md, nd = y.shape[-2:]
-    y_pad = F.pad(y, (r // 2, r // 2, 0, 0), "reflect").cpu()
-
-    # ind = y_pad.unfold(-1, r, 1).argmax(-1)
-    local_max, ind = y_pad.unfold(-1, r, 1).max(-1)
-    mask_local_max = y.cpu() != local_max
-    mask_local_max = mask_local_max.to(hy.device)
-    ind = ind + torch.arange(nd)[None, None, None, :]
-
-    ind = ind.to(hy.device)
 
     mask_tv = (
         torch.atan2(
@@ -88,7 +79,7 @@ def generate_mask_dict_torch(
                 )
             ),
         )
-        ** 12
+        ** 10
     )
 
     mask_hessian = (
@@ -110,7 +101,7 @@ def generate_mask_dict_torch(
                 )
             ),
         )
-        ** 12
+        ** 10
     )
 
     mask_valid = torch.zeros_like(mask_hessian)
@@ -118,10 +109,10 @@ def generate_mask_dict_torch(
         mask_xi_f = torch.from_numpy(np.isin(sample_params["angle_offset"], ao)).to(
             hy.device
         )
-        mask_xi = mask_xi_f[:, None].repeat_interleave(5, 1).reshape(-1)
+        mask_xi = mask_xi_f[:, None].reshape(-1)
         mask_valid += mask_xi[None, :, None, None] * fusion_mask[:, i : i + 1, :, :]
     mask_valid = mask_valid > 0
-    mask_tv = mask_tv * mask_valid[:, ::5, :, :]
+    mask_tv = mask_tv * mask_valid
     mask_hessian = mask_hessian * mask_valid
 
     mask_tv_f = -F.max_pool2d(
@@ -131,41 +122,18 @@ def generate_mask_dict_torch(
         padding=(0, 0),
     )
 
-    # mask_tv_f = F.interpolate(
-    #     mask_tv,
-    #     (md, nd//sample_params["r"]),
-    #     mode = "bilinear",
-    #     align_corners = True,
-    # )
-
     ind_tv_f = torch.argmax(mask_tv_f, dim=1, keepdim=True)
     mask_tv_f = torch.max(mask_tv_f, dim=1, keepdim=True)[0]
 
     ind_tv = torch.argmax(mask_tv, dim=1, keepdim=True)
     mask_tv = torch.max(mask_tv, dim=1, keepdim=True)[0]
 
-    mask_hessian_f_split = np.split(
-        np.arange(mask_hessian.shape[1]), len(sample_params["angle_offset"])
-    )
-    mask_hessian_f = []
-    for data_ind in mask_hessian_f_split:
-        mask_hessian_f.append(
-            torch.max(mask_hessian[:, data_ind, :, :], 1, keepdim=True)[0]
-        )
-    mask_hessian_f = torch.cat(mask_hessian_f, 1)
     mask_hessian_f = -F.max_pool2d(
-        -mask_hessian_f,
-        (1, sample_params["r"]),
+        -mask_hessian,
+        [1, sample_params["r"]],
         stride=(1, sample_params["r"]),
         padding=(0, 0),
     )
-
-    # mask_hessian_f = F.interpolate(
-    #     mask_hessian_f,
-    #     (md, nd//sample_params["r"]),
-    #     mode = "bilinear",
-    #     align_corners = True,
-    # )
 
     ind_hessian_f = torch.argmax(mask_hessian_f, dim=1, keepdim=True)
     mask_hessian_f = torch.max(mask_hessian_f, dim=1, keepdim=True)[0]
@@ -174,7 +142,10 @@ def generate_mask_dict_torch(
     mask_hessian = torch.max(mask_hessian, dim=1, keepdim=True)[0]
 
     mask_tv = F.max_pool2d(
-        mask_tv, (Dx.shape[-2], Dx.shape[-1]), stride=(1, 1), padding=Dx.shape[-1] // 2
+        mask_tv,
+        (Dx.shape[-2], Dx.shape[-1]),
+        stride=(1, 1),
+        padding=Dx.shape[-1] // 2,
     )
     mask_hessian = F.max_pool2d(
         mask_hessian,
@@ -182,6 +153,16 @@ def generate_mask_dict_torch(
         stride=(1, 1),
         padding=DGaussxx.shape[-1] // 2,
     )
+
+    y_pad = F.pad(targets_f, (r // 2, r // 2, 0, 0), "constant").cpu()
+    _, inds = y_pad.unfold(-1, r, 1).max(-1)
+    inds = inds + torch.arange(targets_f.shape[-1])[None, None, None, :] - r // 2
+    inds = inds.to(hy.device)
+
+    y_pad = F.pad(y, (r // 2, r // 2, 0, 0), "constant").cpu()
+    _, ind = y_pad.unfold(-1, r, 1).max(-1)
+    ind = ind + torch.arange(y.shape[-1])[None, None, None, :] - r // 2
+    ind = ind.to(hy.device)
 
     mask_tv_f = F.max_pool2d(
         mask_tv_f,
@@ -195,6 +176,20 @@ def generate_mask_dict_torch(
         stride=(1, 1),
         padding=DGaussxx.shape[-1] // 2,
     )
+
+    mask_tv_f[
+        :,
+        :,
+        torch.arange(y.shape[-2])[None, None, :, None].to(hy.device),
+        inds,
+    ] = 0
+
+    mask_hessian_f[
+        :,
+        :,
+        torch.arange(y.shape[-2])[None, None, :, None].to(hy.device),
+        inds,
+    ] = 0
 
     t = torch.linspace(0, y.shape[-2] - 1, (y.shape[-2] - 1) * sample_params["r"] + 1)
     t_max = t.max()
@@ -220,18 +215,24 @@ def generate_mask_dict_torch(
         align_corners=True,
     )
 
+    mask = torch.zeros_like(y)
+    mask[
+        0,
+        0,
+        torch.arange(y.shape[-2])[None, None, ::2, None].to(hy.device),
+        ind[:, :, ::2, :],
+    ] = 1
     mask_dict = {
         "mask_tv": mask_tv,
         "mask_hessian": mask_hessian,
         "mask_hessian_f": mask_hessian_f,
         "mask_tv_f": mask_tv_f,
-        "ind": ind,
         "ind_tv": ind_tv,
         "ind_hessian": ind_hessian,
         "ind_hessian_f": ind_hessian_f,
         "ind_tv_f": ind_tv_f,
         "coor": coor,
-        "mask_local_max": mask_local_max,
+        "non_positive_mask": mask,
     }
 
     return mask_dict, targets_f, targetd_bilinear

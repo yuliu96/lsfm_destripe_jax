@@ -7,6 +7,95 @@ import pywt
 import ptwt
 
 
+class GuidedFilterLoss:
+    def __init__(self, r, eps=1e-9):
+        self.r, self.eps = r, eps
+
+    def diff_x(self, input, r):
+        return input[:, :, 2 * r + 1 :, :] - input[:, :, : -2 * r - 1, :]
+
+    def diff_y(self, input, r):
+        return input[:, :, :, 2 * r + 1 :] - input[:, :, :, : -2 * r - 1]
+
+    def boxfilter(self, input):
+        return self.diff_x(
+            self.diff_y(
+                F.pad(
+                    input,
+                    (self.r + 1, self.r, self.r + 1, self.r),
+                    mode="reflect",
+                ).cumsum(3),
+                self.r,
+            ).cumsum(2),
+            self.r,
+        )
+
+    def __call__(self, x, y):
+        N = self.boxfilter(torch.ones_like(x))
+        mean_x_y = self.boxfilter(x) / N
+        mean_x2 = self.boxfilter(x * y) / N
+        cov_xy = mean_x2 - mean_x_y * mean_x_y
+        var_x = mean_x2 - mean_x_y * mean_x_y
+        A = cov_xy / (var_x + self.eps)  # jnp.clip(var_x, self.eps, None)
+        b = mean_x_y - A * mean_x_y
+        A, b = self.boxfilter(A) / N, self.boxfilter(b) / N
+        return A * x + b
+
+
+def non_pos_unit(
+    outputGNNraw_original,
+    outputGNNraw,
+    mask_dict,
+    targets,
+    r,
+):
+    m, n = outputGNNraw_original.shape[-2:]
+    outputGNNraw2 = (
+        outputGNNraw * (1 - mask_dict["non_positive_mask"])
+        + targets * mask_dict["non_positive_mask"]
+    )
+    outputGNNraw_original = torch.cat(
+        (outputGNNraw_original, outputGNNraw, outputGNNraw2), 0
+    )
+    outputGNNraw_original_f = F.interpolate(
+        outputGNNraw_original,
+        (
+            m,
+            n // r,
+        ),
+        mode="bilinear",
+        align_corners=True,
+    )
+    return outputGNNraw_original, outputGNNraw_original_f
+
+
+def identical_unit(
+    outputGNNraw_original,
+    outputGNNraw,
+    mask_dict,
+    targets,
+    r,
+):
+    m, n = outputGNNraw_original.shape[-2:]
+    outputGNNraw_original = torch.cat(
+        (
+            outputGNNraw_original,
+            outputGNNraw,
+        ),
+        0,
+    )
+    outputGNNraw_original_f = F.interpolate(
+        outputGNNraw_original,
+        (
+            m,
+            n // r,
+        ),
+        mode="bilinear",
+        align_corners=True,
+    )
+    return outputGNNraw_original, outputGNNraw_original_f
+
+
 class Loss_torch(nn.Module):
     def __init__(
         self,
@@ -41,11 +130,7 @@ class Loss_torch(nn.Module):
                 np.rad2deg(
                     np.arctan(
                         shape_params["r"]
-                        * np.tan(
-                            np.deg2rad(
-                                self.angleOffset[i] + np.array([-2.0, -1, 0, 1, 2])
-                            )
-                        )
+                        * np.tan(np.deg2rad([self.angleOffset[i] + 0.0]))
                     )
                 ).tolist(),
             )
@@ -84,17 +169,17 @@ class Loss_torch(nn.Module):
         DGaussxy = (
             DGaussxy
             / torch.abs(DGaussxy).sum((-2, -1), keepdim=True)
-            * torch.abs(Dx.repeat_interleave(5, 0)).sum((-2, -1), keepdim=True)
+            * torch.abs(Dx).sum((-2, -1), keepdim=True)
         )
         DGaussyy = (
             DGaussyy
             / torch.abs(DGaussyy).sum((-2, -1), keepdim=True)
-            * torch.abs(Dx.repeat_interleave(5, 0)).sum((-2, -1), keepdim=True)
+            * torch.abs(Dx).sum((-2, -1), keepdim=True)
         )
         DGaussxx = (
             DGaussxx
             / torch.abs(DGaussxx).sum((-2, -1), keepdim=True)
-            * torch.abs(Dx.repeat_interleave(5, 0)).sum((-2, -1), keepdim=True)
+            * torch.abs(Dx).sum((-2, -1), keepdim=True)
         )
 
         DGaussxy_f = (
@@ -151,6 +236,18 @@ class Loss_torch(nn.Module):
             else self.HessianRegularizationLoss_plain
         )
 
+        self.GuidedFilterLoss = GuidedFilterLoss(
+            r=train_params["max_pool_kernel_size"],
+            eps=1,
+        )
+
+        if shape_params["non_positive"]:
+            self.non_postive_uint = non_pos_unit
+            self.main_loss = lambda a, b: 0
+        else:
+            self.non_postive_uint = identical_unit
+            self.main_loss = self.gf_loss
+
         self.register_buffer("Dx_f", Dx_f.to(torch.float))
         self.register_buffer("Dy_f", Dy_f.to(torch.float))
         self.register_buffer("DGaussxx_f", DGaussxx_f.to(torch.float))
@@ -162,6 +259,14 @@ class Loss_torch(nn.Module):
         self.register_buffer("DGaussxx", DGaussxx.to(torch.float))
         self.register_buffer("DGaussyy", DGaussyy.to(torch.float))
         self.register_buffer("DGaussxy", DGaussxy.to(torch.float))
+
+    def gf_loss(self, targets, outputGNNraw_original):
+        return 10 * torch.sum(
+            torch.abs(
+                self.GuidedFilterLoss(targets, targets)
+                - self.GuidedFilterLoss(outputGNNraw_original, outputGNNraw_original)
+            )
+        )
 
     def total_variation_kernel(
         self,
@@ -411,13 +516,6 @@ class Loss_torch(nn.Module):
         targets_f,
     ):
         outputGNNraw_original, output_att = network(**inputs)
-        # ouotputGNNraw_original = torch.where(outputGNNraw_original == F.max_pool2d(outputGNNraw_original, (1, 89), stride = 1, padding = (0, 89//2)),
-        #                                      targets, outputGNNraw_original,)
-
-        # a = F.max_pool2d(outputGNNraw_original, (1, 89), stride = 1, padding = (0, 89//2))
-        # b = F.max_pool2d(targets, (1, 89), stride = 1, padding = (0, 89//2))
-        # outputGNNraw_original = torch.clip(a-b, 0, None)+b+outputGNNraw_original-a
-
         outputGNNraw_full = (
             F.grid_sample(
                 outputGNNraw_original - targets,
@@ -434,28 +532,8 @@ class Loss_torch(nn.Module):
             mode="bilinear",
             align_corners=True,
         )
-        outputGNNraw_original_pad = F.pad(
-            targets - outputGNNraw_original,
-            (self.GF_pad // 2, self.GF_pad // 2, 0, 0),
-            "reflect",
-        )
 
-        m, n = outputGNNraw_original.shape[-2:]
-
-        mse = 1 * torch.sum(
-            torch.abs(
-                outputGNNraw_original_pad[
-                    0,
-                    0,
-                    torch.arange(outputGNNraw_original.shape[-2])[
-                        None, None, :, None
-                    ].to(outputGNNraw_original_pad.device),
-                    mask_dict["ind"],
-                ]
-            )
-        ) + self.lambda_masking_mse * torch.sum(
-            torch.abs(targets - outputGNNraw_original) * mask_dict["mse_mask"]
-        )
+        mse = self.main_loss(targets, outputGNNraw_original)
 
         kernel = pywt.Wavelet("db4")
         l = 6
@@ -491,20 +569,16 @@ class Loss_torch(nn.Module):
                 torch.abs(output_att_dict[i][1][2] - output_gnn_hr_dict[i][1][2])
             )
 
-        outputGNNraw_original = torch.cat((outputGNNraw_original, outputGNNraw), 0)
-
-        outputGNNraw_original_f = F.interpolate(
+        outputGNNraw_original, outputGNNraw_original_f = self.non_postive_uint(
             outputGNNraw_original,
-            (
-                m,
-                n // self.r,
-            ),
-            mode="bilinear",
-            align_corners=True,
+            outputGNNraw,
+            mask_dict,
+            targets,
+            self.r,
         )
 
         tv = self.total_variation_cal(
-            outputGNNraw_original[1:2],
+            outputGNNraw_original[1:],
             targets,
             self.Dx,
             self.Dy,
@@ -513,20 +587,16 @@ class Loss_torch(nn.Module):
         )
 
         tv = tv + self.total_variation_cal(
-            F.max_pool2d(
-                outputGNNraw_original_f[1:2], (7, 7), stride=1, padding=7 // 2
-            ),
-            F.max_pool2d(targets_f, (7, 7), stride=1, padding=7 // 2),
-            # outputGNNraw_original_f[1:2],
-            # targets_f,
+            outputGNNraw_original_f[1:],
+            targets_f,
             self.Dx_f,
             self.Dy_f,
             mask_dict["mask_tv_f"],
             mask_dict["ind_tv_f"],
         )
 
-        hessian = self.HessianRegularizationLoss(
-            outputGNNraw_original[1:2],
+        hessian = self.hessian_cal(
+            outputGNNraw_original[1:],
             targets,
             self.DGaussxx,
             self.DGaussyy,
@@ -536,12 +606,8 @@ class Loss_torch(nn.Module):
         )
 
         hessian = hessian + self.hessian_cal(
-            F.max_pool2d(
-                outputGNNraw_original_f[1:2], (13, 13), stride=1, padding=13 // 2
-            ),
-            F.max_pool2d(targets_f, (13, 13), stride=1, padding=13 // 2),
-            # outputGNNraw_original_f[1:2],
-            # targets_f,
+            outputGNNraw_original_f[1:],
+            targets_f,
             self.DGaussxx_f,
             self.DGaussyy_f,
             self.DGaussxy_f,

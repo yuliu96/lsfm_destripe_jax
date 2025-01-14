@@ -220,47 +220,6 @@ class ResLearning(nn.Module):
         return self.complexReLU(inx + self.linear(x))
 
 
-class identical_func:
-    def __init__(
-        self,
-    ):
-        pass
-
-    def __call__(self, x, target, mask):
-        return x
-        # mask = F.max_pool2d(target, (1, 189), stride = 1, padding = (0, 94))
-        x = torch.where(
-            mask,
-            x,
-            target,
-        )
-        return x
-
-
-class non_positive_unit:
-    def __init__(
-        self,
-    ):
-        pass
-
-    def __call__(self, x, target, mask):
-        # mask = F.max_pool2d(target, (1, 189), stride = 1, padding = (0, 94))
-        # x_non_pos = torch.clip(x - target, 0, None) + target
-        x_non_pos = F.leaky_relu(x - target, 0.1) + target
-        x = torch.where(
-            ((torch.arange(x.shape[2])[None, None, :, None].to(x.device) % 2) == 1),
-            # ((torch.arange(x.shape[3])[None, None, None, :].to(x.device) % 2) == 1),
-            x,
-            x_non_pos,
-        )
-        x = torch.where(
-            mask,
-            x,
-            x_non_pos,
-        )
-        return x
-
-
 class DeStripeModel_torch(nn.Module):
     def __init__(
         self,
@@ -272,7 +231,6 @@ class DeStripeModel_torch(nn.Module):
         n_l,
         r,
         inc=16,
-        non_positive=False,
     ):
         super(DeStripeModel_torch, self).__init__()
         self.inc = inc
@@ -389,10 +347,6 @@ class DeStripeModel_torch(nn.Module):
             self.latentProcess,
         )
 
-        self.non_positive_unit = (
-            non_positive_unit() if non_positive else identical_func()
-        )
-
         self.GuidedFilter = GuidedFilter(
             rx=49,
             ry=3,
@@ -402,8 +356,6 @@ class DeStripeModel_torch(nn.Module):
             Angle=Angle,
         )
 
-        # self.w = nn.Parameter(torch.rand(NI.shape) + 1j * torch.rand(NI.shape))
-        # self.w.data = Cmplx_Xavier_Init(self.w.data)
         self.complexReLU = complex_relu()
         self.alpha = nn.Parameter(torch.ones(1, 1, 1, 1))
         for m in self.children():
@@ -466,7 +418,6 @@ class DeStripeModel_torch(nn.Module):
         target,
         target_hr,
         coor,
-        mask,
     ):
         Xf = self.p(Xf)
         Xf_tvx = self.gnn(Xf)
@@ -478,7 +429,6 @@ class DeStripeModel_torch(nn.Module):
         )
         outputGNNraw = self.fourierResult(X_fourier[..., 0], aver)
         outputGNNraw = outputGNNraw + self.alpha
-        outputGNNraw = self.non_positive_unit(outputGNNraw, target, mask)
         outputLR = self.GuidedFilter(target, outputGNNraw, target_hr, coor)
 
         return outputGNNraw, outputLR
