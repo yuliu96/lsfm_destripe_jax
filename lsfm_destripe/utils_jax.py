@@ -155,7 +155,6 @@ def generate_mask_dict_jax(
         "mask_hessian": mask_hessian,
         "mask_hessian_f": mask_hessian_f,
         "mask_tv_f": mask_tv_f,
-        "ind": ind,
         "ind_tv": ind_tv,
         "ind_hessian": ind_hessian,
         "ind_hessian_f": ind_hessian_f,
