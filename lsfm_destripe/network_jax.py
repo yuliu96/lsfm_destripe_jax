@@ -110,16 +110,6 @@ class ResLearning(hk.Module):
         return complex_relu(inx + CLinear(self.outc)(x))
 
 
-class identical_func:
-    def __init__(
-        self,
-    ):
-        pass
-
-    def __call__(self, x, target, mask):
-        return x
-
-
 class gnn(hk.Module):
     def __init__(
         self,
@@ -202,26 +192,6 @@ class tv_uint(hk.Module):
         return jnp.concatenate(X_fourier, -1)
 
 
-class non_positive_unit:
-    def __init__(
-        self,
-    ):
-        pass
-
-    def __call__(self, x, target, mask):
-        x_non_pos = jax.nn.leaky_relu(x - target, 0.5) + target
-        # x_non_pos = jnp.clip(x-target, 0, None) + target
-        # x = x.at[:, :, ::2, :].set(x_non_pos[:, :, ::2, :])
-        x = x * (jnp.arange(x.shape[2])[None, None, :, None] % 2 == 0) + x_non_pos * (
-            jnp.arange(x.shape[2])[None, None, :, None] % 2 == 1
-        )
-        # x = x*mask + target*(1-mask)
-        x = x.at[0, 0, jnp.arange(x.shape[-2])[None, None, :, None], mask].set(
-            x_non_pos[0, 0, jnp.arange(x.shape[-2])[None, None, :, None], mask]
-        )
-        return x
-
-
 class GuidedFilterJAX(hk.Module):
     def __init__(self, rx, ry, r, Angle, m=None, n=None, eps=1e-9):
         super().__init__()
@@ -292,7 +262,6 @@ class DeStripeModel_jax(hk.Module):
         n_l,
         r,
         inc=16,
-        non_positive=False,
     ):
         super().__init__()
         self.NI, self.hier_mask, self.hier_ind, self.inc = NI, hier_mask, hier_ind, inc
@@ -385,10 +354,6 @@ class DeStripeModel_jax(hk.Module):
             self.edgeProcess,
             self.latentProcess,
         )
-
-        self.non_positive_unit = (
-            non_positive_unit() if non_positive else identical_func()
-        )
         self.GuidedFilter = GuidedFilterJAX(
             rx=49,
             ry=3,
@@ -453,7 +418,6 @@ class DeStripeModel_jax(hk.Module):
         target,
         target_hr,
         coor,
-        mask_local_max,
     ):
         Xf = self.p(Xf)  # (M*N, 2,)
         Xf_tvx = self.gnn(Xf)
@@ -466,6 +430,5 @@ class DeStripeModel_jax(hk.Module):
             init=jnp.ones,
         )
         outputGNNraw = outputGNNraw + alpha
-        outputGNNraw = self.non_positive_unit(outputGNNraw, target, mask_local_max)
         outputLR = self.GuidedFilter(target, outputGNNraw, target_hr, coor)
         return outputGNNraw, outputLR
