@@ -1,12 +1,17 @@
 from typing import List
 import numpy as np
 import scipy
-import haiku as hk
-import jax.numpy as jnp
-import jax
+
+try:
+    import haiku as hk
+    import jax.numpy as jnp
+    import jax
+    from lsfm_destripe.utils_jax import generate_mapping_coordinates
+except:
+    pass
+
 import math
 import copy
-from lsfm_destripe.utils_jax import generate_mapping_coordinates
 import torch
 
 

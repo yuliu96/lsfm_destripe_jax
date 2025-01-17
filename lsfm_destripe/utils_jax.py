@@ -252,18 +252,13 @@ def cADAM(
     return init, update, get_params
 
 
-def initialize_cmplx_model(
+def initialize_cmplx_model_jax(
     network,
     key,
     dummy_input,
-    backend,
 ):
-    if backend == "jax":
-        net_params = network.init(key, **dummy_input)
-        return net_params
-    else:
-        net_params = network.parameters()
-        return net_params
+    net_params = network.init(key, **dummy_input)
+    return net_params
 
 
 class update_jax:

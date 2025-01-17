@@ -2,18 +2,30 @@ import warnings
 
 warnings.filterwarnings("ignore", message="ignoring keyword argument 'read_only'")
 
-import numpy as np
-import jax
 from typing import Union, Dict
+
+import numpy as np
+
+try:
+    import haiku as hk
+    import jax
+    import jax.numpy as jnp
+    from lsfm_destripe.utils_jax import (
+        initialize_cmplx_model_jax,
+        update_jax,
+        generate_mask_dict_jax,
+    )
+    from lsfm_destripe.network_jax import DeStripeModel_jax
+    from lsfm_destripe.loss_term_jax import Loss_jax
+    from jax import jit
+    import jaxwt
+
+    jax_flag = 1
+except:
+    jax_flag = 0
+
 import copy
-import jax.numpy as jnp
-from lsfm_destripe.utils_jax import (
-    initialize_cmplx_model,
-    update_jax,
-    generate_mask_dict_jax,
-)
 import tqdm
-import dask.array as da
 from lsfm_destripe.utils import (
     global_correction,
     destripe_train_params,
@@ -21,15 +33,19 @@ from lsfm_destripe.utils import (
     prepare_aux,
 )
 import matplotlib.pyplot as plt
-from lsfm_destripe.network_jax import DeStripeModel_jax
 from lsfm_destripe.guided_filter_upsample import GuidedUpsample
 import dask.array as da
+
 from aicsimageio import AICSImage
-from lsfm_destripe.loss_term_jax import Loss_jax
 import torch
+
 from lsfm_destripe.network_torch import DeStripeModel_torch
 from lsfm_destripe.loss_term_torch import Loss_torch
-from lsfm_destripe.utils_torch import update_torch, generate_mask_dict_torch
+from lsfm_destripe.utils_torch import (
+    update_torch,
+    generate_mask_dict_torch,
+    initialize_cmplx_model_torch,
+)
 
 
 class DeStripe:
@@ -60,11 +76,16 @@ class DeStripe:
             "n_epochs": n_epochs,
             "wedge_degree": wedge_degree,
         }
+        print(self.train_params)
         if device is None:
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         else:
             self.device = device
         self.backend = backend
+        if jax_flag == 0:
+            if self.backend == "jax":
+                print("jax is not available on the current machine, use torch instead.")
+            self.backend = "torch"
 
     @staticmethod
     def train_on_one_slice(
@@ -125,6 +146,13 @@ class DeStripe:
         )
 
         aver = targetd.sum((2, 3))
+
+        initialize_cmplx_model = (
+            initialize_cmplx_model_jax
+            if backend == "jax"
+            else initialize_cmplx_model_torch
+        )
+
         net_params = initialize_cmplx_model(
             update_method._network,
             rng_seq,
@@ -135,7 +163,6 @@ class DeStripe:
                 "target_hr": target,
                 "coor": mask_dict["coor"],
             },
-            backend=backend,
         )
 
         opt_state = update_method.opt_init(net_params)
@@ -193,6 +220,7 @@ class DeStripe:
         non_positive: bool = False,
         backend: str = "jax",
         flag_compose: bool = False,
+        display_angle_orientation: bool = True,
     ):
         if train_params is None:
             train_params = destripe_train_params()
@@ -257,28 +285,28 @@ class DeStripe:
             train_params["n_neighbors"],
             backend=backend,
         )
-
-        print("Please check the orientation of the stripes...")
-        fig, ax = plt.subplots(
-            1, 2 if not flag_compose else len(angle_offset_individual), dpi=200
-        )
-        if not flag_compose:
-            ax[1].set_visible(False)
-        for i in range(len(angle_offset_individual)):
-            demo_img = X[z // 2, :, :, :]
-            demo_m, demo_n = demo_img.shape[-2:]
-            if not sample_params["is_vertical"]:
-                (demo_m, demo_n) = (demo_n, demo_m)
-            ax[i].imshow(demo_img[i, :].compute() + 1.0)
-            for deg in sample_params["angle_offset_individual"][i]:
-                d = np.tan(np.deg2rad(deg)) * demo_m
-                p0 = [0 + demo_n // 2 - d // 2, d + demo_n // 2 - d // 2]
-                p1 = [0, demo_m - 1]
+        if display_angle_orientation:
+            print("Please check the orientation of the stripes...")
+            fig, ax = plt.subplots(
+                1, 2 if not flag_compose else len(angle_offset_individual), dpi=200
+            )
+            if not flag_compose:
+                ax[1].set_visible(False)
+            for i in range(len(angle_offset_individual)):
+                demo_img = X[z // 2, :, :, :]
+                demo_m, demo_n = demo_img.shape[-2:]
                 if not sample_params["is_vertical"]:
-                    (p0, p1) = (p1, p0)
-                ax[i].plot(p0, p1, "r")
-            ax[i].axis("off")
-        plt.show()
+                    (demo_m, demo_n) = (demo_n, demo_m)
+                ax[i].imshow(demo_img[i, :].compute() + 1.0)
+                for deg in sample_params["angle_offset_individual"][i]:
+                    d = np.tan(np.deg2rad(deg)) * demo_m
+                    p0 = [0 + demo_n // 2 - d // 2, d + demo_n // 2 - d // 2]
+                    p1 = [0, demo_m - 1]
+                    if not sample_params["is_vertical"]:
+                        (p0, p1) = (p1, p0)
+                    ax[i].plot(p0, p1, "r")
+                ax[i].axis("off")
+            plt.show()
 
         GuidedFilterHRModel = GuidedUpsample(
             rx=train_params["gf_kernel_size"],
@@ -394,6 +422,7 @@ class DeStripe:
         mask: Union[str, np.ndarray, da.core.Array] = None,
         fusion_mask: Union[da.core.Array, np.ndarray] = None,
         display: bool = False,
+        display_angle_orientation: bool = False,
         non_positive: bool = False,
         **kwargs,
     ):
@@ -465,5 +494,6 @@ class DeStripe:
             non_positive=non_positive,
             backend=self.backend,
             flag_compose=flag_compose,
+            display_angle_orientation=display_angle_orientation,
         )
         return out

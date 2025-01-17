@@ -1,13 +1,15 @@
-import jaxwt
-import jax.numpy as jnp
 import copy
-import jax
 import numpy as np
 from lsfm_destripe.constant import WaveletDetailTuple2d
 import torch
 import ptwt
 import pywt
 import torch.nn.functional as F
+
+try:
+    import jax
+except:
+    pass
 
 
 def wave_rec(

@@ -3,6 +3,15 @@ import torch.nn.functional as F
 import numpy as np
 
 
+def initialize_cmplx_model_torch(
+    network,
+    key,
+    dummy_input,
+):
+    net_params = network.parameters()
+    return net_params
+
+
 class update_torch:
     def __init__(
         self,
