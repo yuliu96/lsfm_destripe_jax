@@ -76,7 +76,6 @@ class DeStripe:
             "n_epochs": n_epochs,
             "wedge_degree": wedge_degree,
         }
-        print(self.train_params)
         if device is None:
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         else:
